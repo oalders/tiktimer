@@ -17,21 +17,30 @@ type Timer struct {
 	Accumulated time.Duration `json:"accumulated"`
 }
 
+type DisplayMode string
+
+const (
+	DisplayText     DisplayMode = "text"
+	DisplayOdometer DisplayMode = "odometer"
+)
+
 type App struct {
-	mu       sync.Mutex
-	timers   []*Timer
-	active   int  // index of active timer, -1 if none
-	running  bool // whether the active timer is ticking
+	mu      sync.Mutex
+	timers  []*Timer
+	active  int  // index of active timer, -1 if none
+	running bool // whether the active timer is ticking
 	lastTick time.Time
+	display  DisplayMode
 }
 
 type saveData struct {
-	Timers []Timer `json:"timers"`
-	Active int     `json:"active"`
+	Timers  []Timer     `json:"timers"`
+	Active  int         `json:"active"`
+	Display DisplayMode `json:"display,omitempty"`
 }
 
 func newApp() *App {
-	return &App{active: -1}
+	return &App{active: -1, display: DisplayText}
 }
 
 func (a *App) savePath() string {
@@ -41,7 +50,7 @@ func (a *App) savePath() string {
 
 func (a *App) save() {
 	a.mu.Lock()
-	data := saveData{Active: a.active}
+	data := saveData{Active: a.active, Display: a.display}
 	for _, t := range a.timers {
 		data.Timers = append(data.Timers, *t)
 	}
@@ -68,6 +77,9 @@ func (a *App) load() {
 		a.timers = append(a.timers, &data.Timers[i])
 	}
 	a.active = data.Active
+	if data.Display != "" {
+		a.display = data.Display
+	}
 }
 
 func formatDuration(d time.Duration, showTenths bool) string {
@@ -100,22 +112,33 @@ func (a *App) updateTitle() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	var title string
 	if a.active >= 0 && a.active < len(a.timers) {
 		t := a.timers[a.active]
 		acc := t.Accumulated
 		if a.running {
 			acc += time.Since(a.lastTick)
 		}
-		title = fmt.Sprintf("%s %s", t.Name, formatDuration(acc, true))
+		timeStr := formatDuration(acc, true)
+		if a.display == DisplayOdometer {
+			noTemplate := false
+			menuet.App().SetMenuState(&menuet.MenuState{
+				Title:         " " + t.Name,
+				Image:         renderOdometer(timeStr),
+				FontSize:      11,
+				TemplateImage: &noTemplate,
+			})
+		} else {
+			menuet.App().SetMenuState(&menuet.MenuState{
+				Title:    fmt.Sprintf("%s %s", t.Name, timeStr),
+				FontSize: 11,
+			})
+		}
 	} else {
-		title = "TikTimer"
+		menuet.App().SetMenuState(&menuet.MenuState{
+			Title:    "TikTimer",
+			FontSize: 11,
+		})
 	}
-
-	menuet.App().SetMenuState(&menuet.MenuState{
-		Title:    title,
-		FontSize: 11,
-	})
 }
 
 func (a *App) tick() {
@@ -257,6 +280,22 @@ func (a *App) menuItems() []menuet.MenuItem {
 		},
 	})
 
+	odometerOn := a.display == DisplayOdometer
+	items = append(items, menuet.MenuItem{
+		Text:  "Odometer Display",
+		State: odometerOn,
+		Clicked: func() {
+			a.mu.Lock()
+			if a.display == DisplayOdometer {
+				a.display = DisplayText
+			} else {
+				a.display = DisplayOdometer
+			}
+			a.mu.Unlock()
+			go a.save()
+		},
+	})
+
 	if len(a.timers) > 0 {
 		children := make([]menuet.MenuItem, len(a.timers))
 		for i, t := range a.timers {
@@ -292,6 +331,11 @@ func main() {
 		app.updateTitle()
 		go exec.Command("afplay", "/System/Library/Sounds/Pop.aiff").Run()
 	}
-	app.updateTitle()
+	go func() {
+		// Wait for the app to start before updating the UI
+		time.Sleep(500 * time.Millisecond)
+		app.updateTitle()
+		app.tick()
+	}()
 	menuet.App().RunApplication()
 }
