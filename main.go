@@ -276,20 +276,6 @@ func (a *App) menuItems() []menuet.MenuItem {
 		})
 	}
 
-	items = append(items, menuet.MenuItem{Type: menuet.Separator})
-
-	items = append(items, menuet.MenuItem{
-		Text: "Quit",
-		Clicked: func() {
-			a.mu.Lock()
-			a.flushActive()
-			a.running = false
-			a.mu.Unlock()
-			a.save()
-			os.Exit(0)
-		},
-	})
-
 	return items
 }
 
