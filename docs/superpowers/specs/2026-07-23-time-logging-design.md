@@ -67,8 +67,10 @@ timestamp,name,duration,hours,note
 
 - `timestamp` — RFC3339 with timezone offset (`time.Now().Format(time.RFC3339)`).
 - `name` — the active timer's name.
-- `duration` — `HH:MM:SS` (hours not zero-padded, minutes/seconds are), e.g.
-  `01:23:45` or `12:05:03`.
+- `duration` — always `HH:MM:SS`, all fields zero-padded to two digits so the
+  column is uniform in a spreadsheet, e.g. `01:23:45` or `12:05:03`. This is a
+  dedicated format (`"%02d:%02d:%02d"`), **not** the existing `formatDuration`,
+  which omits the hours field under one hour and does not zero-pad hours.
 - `hours` — decimal hours, 2 decimal places (`"%.2f"`), for rate math.
 - `note` — free text from the prompt; may be empty.
 
@@ -117,7 +119,8 @@ Unit tests (standard `testing` package) cover the pure functions:
 
 - `formatEntryFields`: durations of 0, sub-minute, sub-hour, multi-hour,
   and a case exercising the decimal-hours rounding (e.g. 1h23m45s → `01:23:45`
-  / `1.40`).
+  / `1.40`, and a duration ≥ 100h to confirm three-plus-digit hours still
+  format).
 - `resolveLogPath`: empty config → default iCloud path; non-empty config →
   returned verbatim.
 - `appendLogRow`: against a temp file — creates the file with a header on

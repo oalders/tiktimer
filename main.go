@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/caseymrm/menuet"
@@ -142,9 +144,20 @@ func (a *App) updateTitle() {
 }
 
 func (a *App) tick() {
+	saveInterval := 0
 	for {
 		time.Sleep(100 * time.Millisecond)
 		a.updateTitle()
+		saveInterval++
+		if saveInterval >= 300 { // every 30 seconds
+			saveInterval = 0
+			a.mu.Lock()
+			if a.running {
+				a.flushActive()
+			}
+			a.mu.Unlock()
+			a.save()
+		}
 	}
 }
 
@@ -181,12 +194,10 @@ func (a *App) switchTo(index int) {
 			a.running = true
 		}
 	} else {
-		// Switch timers: pause current, start new
+		// Switch timers: pause current, select new (paused)
 		a.flushActive()
 		a.running = false
 		a.active = index
-		a.lastTick = time.Now()
-		a.running = true
 	}
 
 	go a.save()
@@ -263,6 +274,27 @@ func (a *App) menuItems() []menuet.MenuItem {
 				a.resetActive()
 			},
 		})
+		activeName := a.timers[a.active].Name
+		items = append(items, menuet.MenuItem{
+			Text: "Rename Current Timer...",
+			Clicked: func() {
+				response := menuet.App().Alert(menuet.Alert{
+					MessageText:     "Rename Timer",
+					InformativeText: "Enter a new name:",
+					Buttons:         []string{"Rename", "Cancel"},
+					Inputs:          []string{"Timer name"},
+					InputValues:     []string{activeName},
+				})
+				if response.Button == 0 && len(response.Inputs) > 0 && response.Inputs[0] != "" {
+					a.mu.Lock()
+					if a.active >= 0 && a.active < len(a.timers) {
+						a.timers[a.active].Name = response.Inputs[0]
+					}
+					a.mu.Unlock()
+					go a.save()
+				}
+			},
+		})
 	}
 
 	items = append(items, menuet.MenuItem{
@@ -331,6 +363,18 @@ func main() {
 		app.updateTitle()
 		go exec.Command("afplay", "/System/Library/Sounds/Pop.aiff").Run()
 	}
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+		<-sig
+		app.mu.Lock()
+		app.flushActive()
+		app.running = false
+		app.mu.Unlock()
+		app.save()
+		os.Exit(0)
+	}()
+
 	go func() {
 		// Wait for the app to start before updating the UI
 		time.Sleep(500 * time.Millisecond)
