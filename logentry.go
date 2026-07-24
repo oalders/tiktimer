@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -19,4 +21,23 @@ func formatEntryFields(d time.Duration) (string, string) {
 	duration := fmt.Sprintf("%02d:%02d:%02d", h, m, s)
 	hours := fmt.Sprintf("%.2f", d.Hours())
 	return duration, hours
+}
+
+// defaultLogDir returns the macOS iCloud Drive base directory.
+func defaultLogDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "Library", "Mobile Documents", "com~apple~CloudDocs")
+}
+
+// defaultLogPath returns the default CSV location inside iCloud Drive.
+func defaultLogPath() string {
+	return filepath.Join(defaultLogDir(), "tiktimer-log.csv")
+}
+
+// resolveLogPath returns configPath if set, otherwise the iCloud default.
+func resolveLogPath(configPath string) string {
+	if configPath != "" {
+		return configPath
+	}
+	return defaultLogPath()
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -29,5 +30,22 @@ func TestFormatEntryFields(t *testing.T) {
 				t.Errorf("hours: got %q want %q", gotHours, c.hours)
 			}
 		})
+	}
+}
+
+func TestResolveLogPath(t *testing.T) {
+	if got := resolveLogPath("/tmp/custom.csv"); got != "/tmp/custom.csv" {
+		t.Errorf("non-empty config: got %q want %q", got, "/tmp/custom.csv")
+	}
+	got := resolveLogPath("")
+	want := defaultLogPath()
+	if got != want {
+		t.Errorf("empty config: got %q want %q", got, want)
+	}
+	if filepath.Base(want) != "tiktimer-log.csv" {
+		t.Errorf("default filename: got %q", filepath.Base(want))
+	}
+	if filepath.Base(defaultLogDir()) != "com~apple~CloudDocs" {
+		t.Errorf("default dir: got %q", filepath.Base(defaultLogDir()))
 	}
 }
