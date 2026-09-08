@@ -27,18 +27,20 @@ const (
 )
 
 type App struct {
-	mu      sync.Mutex
-	timers  []*Timer
-	active  int  // index of active timer, -1 if none
-	running bool // whether the active timer is ticking
+	mu       sync.Mutex
+	timers   []*Timer
+	active   int  // index of active timer, -1 if none
+	running  bool // whether the active timer is ticking
 	lastTick time.Time
 	display  DisplayMode
+	logPath  string // CSV destination; empty means the iCloud default
 }
 
 type saveData struct {
 	Timers  []Timer     `json:"timers"`
 	Active  int         `json:"active"`
 	Display DisplayMode `json:"display,omitempty"`
+	LogPath string      `json:"logPath,omitempty"`
 }
 
 func newApp() *App {
@@ -52,7 +54,7 @@ func (a *App) savePath() string {
 
 func (a *App) save() {
 	a.mu.Lock()
-	data := saveData{Active: a.active, Display: a.display}
+	data := saveData{Active: a.active, Display: a.display, LogPath: a.logPath}
 	for _, t := range a.timers {
 		data.Timers = append(data.Timers, *t)
 	}
@@ -82,6 +84,7 @@ func (a *App) load() {
 	if data.Display != "" {
 		a.display = data.Display
 	}
+	a.logPath = data.LogPath
 }
 
 func formatDuration(d time.Duration, showTenths bool) string {
