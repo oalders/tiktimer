@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,4 +41,42 @@ func resolveLogPath(configPath string) string {
 		return configPath
 	}
 	return defaultLogPath()
+}
+
+// appendLogRow appends one time-entry row to the CSV at path, creating the
+// parent directory and a header row when needed. It returns the first error
+// encountered while writing, flushing, or closing the file so callers can
+// avoid resetting a timer whose time was never persisted.
+func appendLogRow(path, timestamp, name, duration, hours, note string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	needHeader := true
+	if fi, err := os.Stat(path); err == nil && fi.Size() > 0 {
+		needHeader = false
+	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+
+	w := csv.NewWriter(f)
+	if needHeader {
+		if err := w.Write([]string{"timestamp", "name", "duration", "hours", "note"}); err != nil {
+			f.Close()
+			return err
+		}
+	}
+	if err := w.Write([]string{timestamp, name, duration, hours, note}); err != nil {
+		f.Close()
+		return err
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }

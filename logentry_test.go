@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/csv"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -47,5 +49,71 @@ func TestResolveLogPath(t *testing.T) {
 	}
 	if filepath.Base(defaultLogDir()) != "com~apple~CloudDocs" {
 		t.Errorf("default dir: got %q", filepath.Base(defaultLogDir()))
+	}
+}
+
+func readCSV(t *testing.T, path string) [][]string {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer f.Close()
+	rows, err := csv.NewReader(f).ReadAll()
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	return rows
+}
+
+func TestAppendLogRowCreatesHeaderThenAppends(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "log.csv")
+
+	if err := appendLogRow(path, "2026-07-23T14:30:00-04:00", "Acme", "01:23:45", "1.40", "first"); err != nil {
+		t.Fatalf("first append: %v", err)
+	}
+	if err := appendLogRow(path, "2026-07-23T15:00:00-04:00", "Acme", "00:10:00", "0.17", "second"); err != nil {
+		t.Fatalf("second append: %v", err)
+	}
+
+	rows := readCSV(t, path)
+	if len(rows) != 3 {
+		t.Fatalf("want 3 rows (header + 2), got %d: %v", len(rows), rows)
+	}
+	wantHeader := []string{"timestamp", "name", "duration", "hours", "note"}
+	for i, h := range wantHeader {
+		if rows[0][i] != h {
+			t.Errorf("header col %d: got %q want %q", i, rows[0][i], h)
+		}
+	}
+	if rows[1][4] != "first" || rows[2][4] != "second" {
+		t.Errorf("data rows wrong: %v", rows)
+	}
+}
+
+func TestAppendLogRowWritesHeaderForZeroByteFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "log.csv")
+	// Pre-create an empty file, simulating an iCloud placeholder.
+	if err := os.WriteFile(path, []byte{}, 0644); err != nil {
+		t.Fatalf("precreate: %v", err)
+	}
+	if err := appendLogRow(path, "2026-07-23T14:30:00-04:00", "Acme", "01:00:00", "1.00", "x"); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	rows := readCSV(t, path)
+	if len(rows) != 2 || rows[0][0] != "timestamp" {
+		t.Fatalf("expected header + 1 row, got %v", rows)
+	}
+}
+
+func TestAppendLogRowEscapesNote(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "log.csv")
+	note := `fixed "login", again`
+	if err := appendLogRow(path, "2026-07-23T14:30:00-04:00", "Acme", "01:00:00", "1.00", note); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	rows := readCSV(t, path)
+	if rows[1][4] != note {
+		t.Errorf("note not round-tripped: got %q want %q", rows[1][4], note)
 	}
 }
