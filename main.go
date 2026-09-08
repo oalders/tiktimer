@@ -206,14 +206,77 @@ func (a *App) switchTo(index int) {
 	go a.save()
 }
 
-func (a *App) resetActive() {
+// logAndReset snapshots the active timer's elapsed time, asks the user how the
+// time was spent, appends a CSV row for invoicing, and then zeros the timer.
+// The note prompt is modal, so the mutex is released around it (matching the
+// rename handler). The reset applies only if the snapshotted timer is still the
+// active one, because menuet dispatches other click handlers on their own
+// goroutines while this Alert is open.
+func (a *App) logAndReset() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
+	if a.active < 0 || a.active >= len(a.timers) {
+		a.mu.Unlock()
+		return
+	}
+	snapIdx := a.active
+	snapPtr := a.timers[snapIdx]
+	snapName := snapPtr.Name
+	snapDur := snapPtr.Accumulated
+	if a.running {
+		snapDur += time.Since(a.lastTick)
+	}
+	a.mu.Unlock()
 
-	if a.active >= 0 && a.active < len(a.timers) {
-		a.timers[a.active].Accumulated = 0
+	// Skip zero, sub-second, and clock-skew-negative durations entirely.
+	if snapDur < time.Second {
+		return
+	}
+
+	response := menuet.App().Alert(menuet.Alert{
+		MessageText:     "Log & Reset",
+		InformativeText: "How was this time spent?",
+		Buttons:         []string{"Log & Reset", "Cancel"},
+		Inputs:          []string{"Note"},
+	})
+	if response.Button != 0 {
+		return // Cancel or dismissed.
+	}
+	note := ""
+	if len(response.Inputs) > 0 {
+		note = response.Inputs[0]
+	}
+
+	// For the default iCloud path, refuse to write when iCloud Drive is not set
+	// up: MkdirAll would create a plain local folder that never syncs.
+	if a.logPath == "" {
+		if _, err := os.Stat(defaultLogDir()); err != nil {
+			menuet.App().Alert(menuet.Alert{
+				MessageText:     "iCloud Drive not found",
+				InformativeText: "Enable iCloud Drive or set \"logPath\" in ~/.tiktimer.json. Nothing was logged.",
+				Buttons:         []string{"OK"},
+			})
+			return
+		}
+	}
+
+	durStr, hoursStr := formatEntryFields(snapDur)
+	timestamp := time.Now().Format(time.RFC3339)
+	if err := appendLogRow(resolveLogPath(a.logPath), timestamp, snapName, durStr, hoursStr, note); err != nil {
+		menuet.App().Alert(menuet.Alert{
+			MessageText:     "Could not write log",
+			InformativeText: fmt.Sprintf("%v\n\nThe timer was not reset.", err),
+			Buttons:         []string{"OK"},
+		})
+		return
+	}
+
+	// Reset only if the snapshotted timer is still active and identical.
+	a.mu.Lock()
+	if a.active == snapIdx && snapIdx < len(a.timers) && a.timers[snapIdx] == snapPtr {
+		a.timers[snapIdx].Accumulated = 0
 		a.lastTick = time.Now()
 	}
+	a.mu.Unlock()
 
 	go a.save()
 }
@@ -272,9 +335,9 @@ func (a *App) menuItems() []menuet.MenuItem {
 
 	if a.active >= 0 && a.active < len(a.timers) {
 		items = append(items, menuet.MenuItem{
-			Text: "Reset Current Timer",
+			Text: "Log & Reset…",
 			Clicked: func() {
-				a.resetActive()
+				a.logAndReset()
 			},
 		})
 		activeName := a.timers[a.active].Name
