@@ -232,18 +232,35 @@ func (a *App) logAndReset() {
 		return
 	}
 
+	// Prefill the elapsed time so the user can correct an over- or under-count
+	// before it is logged.
+	prefill, _ := formatEntryFields(snapDur)
 	response := menuet.App().Alert(menuet.Alert{
 		MessageText:     "Log & Reset",
-		InformativeText: "How was this time spent?",
+		InformativeText: "Adjust the time if needed, and note how it was spent.",
 		Buttons:         []string{"Log & Reset", "Cancel"},
-		Inputs:          []string{"Note"},
+		Inputs:          []string{"Time (HH:MM:SS)", "Note"},
+		InputValues:     []string{prefill, ""},
 	})
 	if response.Button != 0 {
 		return // Cancel or dismissed.
 	}
-	note := ""
+	logDur := snapDur
 	if len(response.Inputs) > 0 {
-		note = response.Inputs[0]
+		parsed, err := parseHMS(response.Inputs[0])
+		if err != nil {
+			menuet.App().Alert(menuet.Alert{
+				MessageText:     "Invalid time",
+				InformativeText: fmt.Sprintf("%v\n\nUse HH:MM:SS. Nothing was logged.", err),
+				Buttons:         []string{"OK"},
+			})
+			return
+		}
+		logDur = parsed
+	}
+	note := ""
+	if len(response.Inputs) > 1 {
+		note = response.Inputs[1]
 	}
 
 	// For the default iCloud path, refuse to write when iCloud Drive is not set
@@ -259,7 +276,7 @@ func (a *App) logAndReset() {
 		}
 	}
 
-	durStr, hoursStr := formatEntryFields(snapDur)
+	durStr, hoursStr := formatEntryFields(logDur)
 	timestamp := time.Now().Format(time.RFC3339)
 	if err := appendLogRow(resolveLogPath(a.logPath), timestamp, snapName, durStr, hoursStr, note); err != nil {
 		menuet.App().Alert(menuet.Alert{
@@ -268,6 +285,41 @@ func (a *App) logAndReset() {
 			Buttons:         []string{"OK"},
 		})
 		return
+	}
+
+	// Reset only if the snapshotted timer is still active and identical.
+	a.mu.Lock()
+	if a.active == snapIdx && snapIdx < len(a.timers) && a.timers[snapIdx] == snapPtr {
+		a.timers[snapIdx].Accumulated = 0
+		a.lastTick = time.Now()
+	}
+	a.mu.Unlock()
+
+	go a.save()
+}
+
+// resetActive zeros the active timer without logging it, after a confirmation
+// prompt (the accumulated time is discarded, not recorded). The prompt is
+// modal, so the mutex is released around it and the reset applies only if the
+// snapshotted timer is still the active one, matching logAndReset.
+func (a *App) resetActive() {
+	a.mu.Lock()
+	if a.active < 0 || a.active >= len(a.timers) {
+		a.mu.Unlock()
+		return
+	}
+	snapIdx := a.active
+	snapPtr := a.timers[snapIdx]
+	snapName := snapPtr.Name
+	a.mu.Unlock()
+
+	response := menuet.App().Alert(menuet.Alert{
+		MessageText:     "Reset Timer",
+		InformativeText: fmt.Sprintf("Discard the elapsed time on %q without logging it?", snapName),
+		Buttons:         []string{"Reset", "Cancel"},
+	})
+	if response.Button != 0 {
+		return // Cancel or dismissed.
 	}
 
 	// Reset only if the snapshotted timer is still active and identical.
@@ -338,6 +390,12 @@ func (a *App) menuItems() []menuet.MenuItem {
 			Text: "Log & Reset…",
 			Clicked: func() {
 				a.logAndReset()
+			},
+		})
+		items = append(items, menuet.MenuItem{
+			Text: "Reset Current Timer",
+			Clicked: func() {
+				a.resetActive()
 			},
 		})
 		activeName := a.timers[a.active].Name
