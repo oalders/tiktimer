@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -41,6 +43,31 @@ func resolveLogPath(configPath string) string {
 		return configPath
 	}
 	return defaultLogPath()
+}
+
+// parseHMS parses an "HH:MM:SS" duration string of the form produced by
+// formatEntryFields (hours may be any number of digits; minutes and seconds
+// must be 0-59). Surrounding whitespace is ignored. It returns an error rather
+// than a best-effort value so a mistyped edit is rejected before anything is
+// logged.
+func parseHMS(s string) (time.Duration, error) {
+	parts := strings.Split(strings.TrimSpace(s), ":")
+	if len(parts) != 3 {
+		return 0, fmt.Errorf("expected HH:MM:SS, got %q", s)
+	}
+	h, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil || h < 0 {
+		return 0, fmt.Errorf("invalid hours in %q", s)
+	}
+	m, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil || m < 0 || m > 59 {
+		return 0, fmt.Errorf("invalid minutes in %q", s)
+	}
+	sec, err := strconv.Atoi(strings.TrimSpace(parts[2]))
+	if err != nil || sec < 0 || sec > 59 {
+		return 0, fmt.Errorf("invalid seconds in %q", s)
+	}
+	return time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(sec)*time.Second, nil
 }
 
 // appendLogRow appends one time-entry row to the CSV at path, creating the

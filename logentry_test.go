@@ -117,3 +117,42 @@ func TestAppendLogRowEscapesNote(t *testing.T) {
 		t.Errorf("note not round-tripped: got %q want %q", rows[1][4], note)
 	}
 }
+
+func TestParseHMS(t *testing.T) {
+	good := []struct {
+		in   string
+		want time.Duration
+	}{
+		{"00:00:00", 0},
+		{"00:00:45", 45 * time.Second},
+		{"01:23:45", time.Hour + 23*time.Minute + 45*time.Second},
+		{"100:05:03", 100*time.Hour + 5*time.Minute + 3*time.Second},
+		{"  01:00:00 ", time.Hour},
+	}
+	for _, c := range good {
+		got, err := parseHMS(c.in)
+		if err != nil {
+			t.Errorf("parseHMS(%q) unexpected error: %v", c.in, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("parseHMS(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+
+	bad := []string{"", "1:2", "01:60:00", "01:00:60", "aa:00:00", "-1:00:00", "01:00:00:00"}
+	for _, in := range bad {
+		if _, err := parseHMS(in); err == nil {
+			t.Errorf("parseHMS(%q): expected error, got nil", in)
+		}
+	}
+
+	// Round-trips with formatEntryFields output.
+	for _, d := range []time.Duration{0, 45 * time.Second, time.Hour + 23*time.Minute + 45*time.Second, 100*time.Hour + 5*time.Minute + 3*time.Second} {
+		dur, _ := formatEntryFields(d)
+		got, err := parseHMS(dur)
+		if err != nil || got != d {
+			t.Errorf("round-trip %v: format=%q parse=%v err=%v", d, dur, got, err)
+		}
+	}
+}
