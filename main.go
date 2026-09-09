@@ -298,35 +298,66 @@ func (a *App) logAndReset() {
 	go a.save()
 }
 
-// resetActive zeros the active timer without logging it, after a confirmation
-// prompt (the accumulated time is discarded, not recorded). The prompt is
-// modal, so the mutex is released around it and the reset applies only if the
-// snapshotted timer is still the active one, matching logAndReset.
-func (a *App) resetActive() {
+// setTimerTime edits a timer's accumulated time to an arbitrary value. It works
+// on any timer, running or paused, without switching to it (setting 00:00:00 is
+// how a timer is reset). The edit prompt is modal, so the mutex is released
+// around it; the snapshotted timer is identified by pointer, and the new value
+// is applied only if that timer still exists (it may have been removed while
+// the dialog was open). If the edited timer is the active, running one, lastTick
+// is reset so live ticking continues from the new base without double-counting.
+func (a *App) setTimerTime(target *Timer) {
 	a.mu.Lock()
-	if a.active < 0 || a.active >= len(a.timers) {
-		a.mu.Unlock()
+	var (
+		elapsed time.Duration
+		name    string
+		found   bool
+	)
+	for i, t := range a.timers {
+		if t == target {
+			found, name, elapsed = true, t.Name, t.Accumulated
+			if i == a.active && a.running {
+				elapsed += time.Since(a.lastTick)
+			}
+			break
+		}
+	}
+	a.mu.Unlock()
+	if !found {
 		return
 	}
-	snapIdx := a.active
-	snapPtr := a.timers[snapIdx]
-	snapName := snapPtr.Name
-	a.mu.Unlock()
 
+	prefill, _ := formatEntryFields(elapsed)
 	response := menuet.App().Alert(menuet.Alert{
-		MessageText:     "Reset Timer",
-		InformativeText: fmt.Sprintf("Discard the elapsed time on %q without logging it?", snapName),
-		Buttons:         []string{"Reset", "Cancel"},
+		MessageText:     "Set Time",
+		InformativeText: fmt.Sprintf("Set the elapsed time for %q (HH:MM:SS):", name),
+		Buttons:         []string{"Set", "Cancel"},
+		Inputs:          []string{"Time (HH:MM:SS)"},
+		InputValues:     []string{prefill},
 	})
-	if response.Button != 0 {
-		return // Cancel or dismissed.
+	if response.Button != 0 || len(response.Inputs) == 0 {
+		return // Cancel, dismissed, or no input returned.
+	}
+	parsed, err := parseHMS(response.Inputs[0])
+	if err != nil {
+		menuet.App().Alert(menuet.Alert{
+			MessageText:     "Invalid time",
+			InformativeText: fmt.Sprintf("%v\n\nUse HH:MM:SS. Nothing was changed.", err),
+			Buttons:         []string{"OK"},
+		})
+		return
 	}
 
-	// Reset only if the snapshotted timer is still active and identical.
+	// Apply only if the timer still exists; recheck active/running state now
+	// rather than trusting the pre-modal snapshot.
 	a.mu.Lock()
-	if a.active == snapIdx && snapIdx < len(a.timers) && a.timers[snapIdx] == snapPtr {
-		a.timers[snapIdx].Accumulated = 0
-		a.lastTick = time.Now()
+	for i, t := range a.timers {
+		if t == target {
+			t.Accumulated = parsed
+			if i == a.active && a.running {
+				a.lastTick = time.Now()
+			}
+			break
+		}
 	}
 	a.mu.Unlock()
 
@@ -392,12 +423,6 @@ func (a *App) menuItems() []menuet.MenuItem {
 				a.logAndReset()
 			},
 		})
-		items = append(items, menuet.MenuItem{
-			Text: "Reset Current Timer",
-			Clicked: func() {
-				a.resetActive()
-			},
-		})
 		activeName := a.timers[a.active].Name
 		items = append(items, menuet.MenuItem{
 			Text: "Rename Current Timer...",
@@ -453,6 +478,27 @@ func (a *App) menuItems() []menuet.MenuItem {
 	})
 
 	if len(a.timers) > 0 {
+		setChildren := make([]menuet.MenuItem, len(a.timers))
+		for i, t := range a.timers {
+			tp := t
+			acc := t.Accumulated
+			if i == a.active && a.running {
+				acc += time.Since(a.lastTick)
+			}
+			setChildren[i] = menuet.MenuItem{
+				Text: fmt.Sprintf("%s  %s", t.Name, formatDuration(acc, false)),
+				Clicked: func() {
+					a.setTimerTime(tp)
+				},
+			}
+		}
+		items = append(items, menuet.MenuItem{
+			Text: "Set Time",
+			Children: func() []menuet.MenuItem {
+				return setChildren
+			},
+		})
+
 		children := make([]menuet.MenuItem, len(a.timers))
 		for i, t := range a.timers {
 			idx := i
