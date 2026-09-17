@@ -2,6 +2,11 @@ BINARY := tiktimer
 APP := TikTimer.app
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
+# menuet's Objective-C sources call the deprecated NSUserNotification API,
+# producing clang deprecation warnings on every cgo build. Silence just that
+# category so real warnings stay visible.
+export CGO_CFLAGS := -g -O2 -Wno-deprecated-declarations
+
 .PHONY: build app clean release
 
 build:
