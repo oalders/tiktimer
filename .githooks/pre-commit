@@ -1,0 +1,15 @@
+#!/bin/sh
+# Run the Go test suite before allowing a commit. Enable with `make init`
+# (which points core.hooksPath at .githooks).
+set -e
+
+# menuet's cgo sources trip deprecation warnings; silence just that category so
+# the test output stays readable, matching the Makefile.
+export CGO_CFLAGS="-g -O2 -Wno-deprecated-declarations"
+
+echo "pre-commit: running go test ./..."
+if ! go test ./...; then
+	echo "pre-commit: tests failed; commit aborted." >&2
+	echo "pre-commit: use 'git commit --no-verify' to bypass." >&2
+	exit 1
+fi

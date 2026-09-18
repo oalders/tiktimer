@@ -7,7 +7,15 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 # category so real warnings stay visible.
 export CGO_CFLAGS := -g -O2 -Wno-deprecated-declarations
 
-.PHONY: build app clean release
+.PHONY: init test build app clean release
+
+# Point git at the version-controlled hooks in .githooks (relative path, so it
+# works regardless of where the repo is cloned). Run once after cloning.
+init:
+	git config core.hooksPath .githooks
+
+test:
+	go test ./...
 
 build:
 	CGO_ENABLED=1 go build -o $(BINARY) .

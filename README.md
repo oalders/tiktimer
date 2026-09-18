@@ -52,6 +52,17 @@ The dropdown menu lets you:
 - Reset the active timer
 - Add or remove timers
 
+## Development
+
+```bash
+make init   # point git at .githooks (installs the pre-commit hook)
+make test   # run the Go test suite
+```
+
+`make init` sets `core.hooksPath` to the version-controlled `.githooks`
+directory, whose `pre-commit` hook runs `go test ./...` before each commit.
+Bypass it for a work-in-progress commit with `git commit --no-verify`.
+
 ## Creating a release
 
 ```bash
