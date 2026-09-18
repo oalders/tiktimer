@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -278,7 +279,8 @@ func (a *App) logAndReset() {
 
 	durStr, hoursStr := formatEntryFields(logDur)
 	timestamp := time.Now().Format(time.RFC3339)
-	if err := appendLogRow(resolveLogPath(a.logPath), timestamp, snapName, durStr, hoursStr, note); err != nil {
+	logPath := resolveLogPath(a.logPath)
+	if err := appendLogRow(logPath, timestamp, snapName, durStr, hoursStr, note); err != nil {
 		menuet.App().Alert(menuet.Alert{
 			MessageText:     "Could not write log",
 			InformativeText: fmt.Sprintf("%v\n\nThe timer was not reset.", err),
@@ -296,6 +298,35 @@ func (a *App) logAndReset() {
 	a.mu.Unlock()
 
 	go a.save()
+
+	menuet.App().Alert(menuet.Alert{
+		MessageText:     "Logged",
+		InformativeText: fmt.Sprintf("Logged %s (%s) for %q to:\n\n%s", durStr, hoursStr, snapName, logPath),
+		Buttons:         []string{"OK"},
+	})
+}
+
+// copyLogPath puts the resolved log file path on the clipboard (via pbcopy) so
+// the user can find the CSV without having to log an entry first. The path is
+// shown either way, so a pbcopy failure still leaves the user able to copy it
+// by hand from the alert.
+func (a *App) copyLogPath() {
+	logPath := resolveLogPath(a.logPath)
+
+	informative := logPath
+	c := exec.Command("pbcopy")
+	c.Stdin = strings.NewReader(logPath)
+	if err := c.Run(); err != nil {
+		informative = fmt.Sprintf("%s\n\n(Could not copy to clipboard: %v)", logPath, err)
+	} else {
+		informative = fmt.Sprintf("%s\n\nCopied to clipboard.", logPath)
+	}
+
+	menuet.App().Alert(menuet.Alert{
+		MessageText:     "Log File Path",
+		InformativeText: informative,
+		Buttons:         []string{"OK"},
+	})
 }
 
 // setTimerTime edits a timer's accumulated time to an arbitrary value. It works
@@ -458,6 +489,13 @@ func (a *App) menuItems() []menuet.MenuItem {
 			if response.Button == 0 && len(response.Inputs) > 0 && response.Inputs[0] != "" {
 				a.addTimer(response.Inputs[0])
 			}
+		},
+	})
+
+	items = append(items, menuet.MenuItem{
+		Text: "Copy Log File Path",
+		Clicked: func() {
+			a.copyLogPath()
 		},
 	})
 
