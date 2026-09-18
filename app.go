@@ -118,6 +118,38 @@ func formatDuration(d time.Duration, showTenths bool) string {
 	return fmt.Sprintf("%02d:%02d", m, s)
 }
 
+const (
+	dotRunning = "🟢" // active timer is ticking
+	dotPaused  = "⚪" // a timer is selected but stopped
+)
+
+// statusDot returns the colored menu-bar indicator for the active timer's run
+// state, so the running/paused state is legible at a glance without reading the
+// changing digits.
+func statusDot(running bool) string {
+	if running {
+		return dotRunning
+	}
+	return dotPaused
+}
+
+const (
+	// Distinct start/stop cues so an accidental toggle is audible even when the
+	// menu bar is not being watched. Tink is a bright, high "on"; Bottle is a
+	// muted, lower "off".
+	soundStart = "/System/Library/Sounds/Tink.aiff"
+	soundStop  = "/System/Library/Sounds/Bottle.aiff"
+)
+
+// soundForRunning returns the system sound to play for a run-state transition:
+// the start cue when the timer just began running, the stop cue otherwise.
+func soundForRunning(running bool) string {
+	if running {
+		return soundStart
+	}
+	return soundStop
+}
+
 // flushActive saves elapsed time into the active timer. Caller must hold a.mu.
 func (a *App) flushActive() {
 	if a.running && a.active >= 0 && a.active < len(a.timers) {
@@ -126,12 +158,15 @@ func (a *App) flushActive() {
 	}
 }
 
-func (a *App) toggleActive() {
+// toggleActive starts or stops the active timer. It returns the resulting run
+// state and ok=false when there is no active timer to toggle, so the caller can
+// play the matching start/stop cue only when a real transition happened.
+func (a *App) toggleActive() (running, ok bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	if a.active < 0 || a.active >= len(a.timers) {
-		return
+		return false, false
 	}
 
 	if a.running {
@@ -143,6 +178,7 @@ func (a *App) toggleActive() {
 	}
 
 	a.saveAsync()
+	return a.running, true
 }
 
 func (a *App) switchTo(index int) {

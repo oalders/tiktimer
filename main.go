@@ -22,17 +22,18 @@ func (a *App) updateTitle() {
 			acc += time.Since(a.lastTick)
 		}
 		timeStr := formatDuration(acc, true)
+		dot := statusDot(a.running)
 		if a.display == DisplayOdometer {
 			noTemplate := false
 			menuet.App().SetMenuState(&menuet.MenuState{
-				Title:         " " + t.Name,
+				Title:         dot + " " + t.Name,
 				Image:         renderOdometer(timeStr),
 				FontSize:      11,
 				TemplateImage: &noTemplate,
 			})
 		} else {
 			menuet.App().SetMenuState(&menuet.MenuState{
-				Title:    fmt.Sprintf("%s %s", t.Name, timeStr),
+				Title:    fmt.Sprintf("%s %s %s", dot, t.Name, timeStr),
 				FontSize: 11,
 			})
 		}
@@ -324,9 +325,11 @@ func main() {
 	menuet.App().Label = "com.github.oalders.tiktimer"
 	menuet.App().Children = app.menuItems
 	menuet.App().StatusItemClicked = func() {
-		app.toggleActive()
+		running, ok := app.toggleActive()
 		app.updateTitle()
-		go exec.Command("afplay", "/System/Library/Sounds/Pop.aiff").Run()
+		if ok {
+			go exec.Command("afplay", soundForRunning(running)).Run()
+		}
 	}
 	go func() {
 		sig := make(chan os.Signal, 1)

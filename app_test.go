@@ -52,6 +52,53 @@ func TestAddTimer(t *testing.T) {
 	}
 }
 
+func TestStatusDot(t *testing.T) {
+	if got := statusDot(true); got != dotRunning {
+		t.Errorf("running: got %q want %q", got, dotRunning)
+	}
+	if got := statusDot(false); got != dotPaused {
+		t.Errorf("paused: got %q want %q", got, dotPaused)
+	}
+	if dotRunning == dotPaused {
+		t.Error("running and paused dots must be visually distinct")
+	}
+}
+
+func TestSoundForRunning(t *testing.T) {
+	if got := soundForRunning(true); got != soundStart {
+		t.Errorf("start: got %q want %q", got, soundStart)
+	}
+	if got := soundForRunning(false); got != soundStop {
+		t.Errorf("stop: got %q want %q", got, soundStop)
+	}
+	if soundStart == soundStop {
+		t.Error("start and stop sounds must differ so a toggle is audible")
+	}
+}
+
+func TestToggleActive(t *testing.T) {
+	t.Run("starts and stops the active timer", func(t *testing.T) {
+		a := newTestApp(t, 1)
+		a.active = 0
+
+		running, ok := a.toggleActive()
+		if !ok || !running || !a.running {
+			t.Fatalf("first toggle: running=%v ok=%v a.running=%v want true/true/true", running, ok, a.running)
+		}
+		running, ok = a.toggleActive()
+		if !ok || running || a.running {
+			t.Fatalf("second toggle: running=%v ok=%v a.running=%v want false/true/false", running, ok, a.running)
+		}
+	})
+	t.Run("no active timer is a no-op", func(t *testing.T) {
+		a := newTestApp(t, 1) // active stays -1
+		running, ok := a.toggleActive()
+		if ok || running {
+			t.Errorf("got running=%v ok=%v want false/false", running, ok)
+		}
+	})
+}
+
 func TestSwitchToSelectsAndPauses(t *testing.T) {
 	a := newTestApp(t, 2)
 	a.active = 0
