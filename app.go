@@ -14,6 +14,9 @@ import (
 type Timer struct {
 	Name        string        `json:"name"`
 	Accumulated time.Duration `json:"accumulated"`
+	// PauseOnSleep, when set, makes this timer stop while the display (or the
+	// system) sleeps and resume on wake, so away-from-desk time is not counted.
+	PauseOnSleep bool `json:"pauseOnSleep,omitempty"`
 }
 
 type DisplayMode string
@@ -33,6 +36,9 @@ type App struct {
 	logPath  string // CSV destination; empty means the iCloud default
 	home     string // base dir for the state file; empty means the OS home dir
 	saveWG   sync.WaitGroup
+	// autoPaused records that pauseForSleep stopped the timer, so resumeAfterWake
+	// knows to restart it (and leaves a user-stopped timer alone).
+	autoPaused bool
 }
 
 type saveData struct {
@@ -176,9 +182,60 @@ func (a *App) toggleActive() (running, ok bool) {
 		a.lastTick = time.Now()
 		a.running = true
 	}
+	a.autoPaused = false // an explicit toggle overrides an auto-pause
 
 	a.saveAsync()
 	return a.running, true
+}
+
+// pauseForSleep stops the active timer when the display or system sleeps, but
+// only if that timer opted in via PauseOnSleep. The stop is flagged autoPaused
+// so resumeAfterWake can restart it. It is idempotent: a screen-sleep followed
+// by a system-sleep notification pauses only once.
+func (a *App) pauseForSleep() {
+	a.mu.Lock()
+	if a.running && a.active >= 0 && a.active < len(a.timers) && a.timers[a.active].PauseOnSleep {
+		a.flushActive()
+		a.running = false
+		a.autoPaused = true
+	}
+	a.mu.Unlock()
+
+	a.saveAsync()
+}
+
+// resumeAfterWake restarts a timer that pauseForSleep stopped. A timer the user
+// stopped themselves (autoPaused false) stays stopped. It is idempotent across
+// the screen-wake and system-wake notifications.
+func (a *App) resumeAfterWake() {
+	a.mu.Lock()
+	resumed := false
+	if a.autoPaused && a.active >= 0 && a.active < len(a.timers) {
+		a.lastTick = time.Now()
+		a.running = true
+		resumed = true
+	}
+	a.autoPaused = false
+	a.mu.Unlock()
+
+	if resumed {
+		a.saveAsync()
+	}
+}
+
+// togglePauseOnSleep flips a timer's PauseOnSleep opt-in. Identified by pointer,
+// matching the other snapshot mutators.
+func (a *App) togglePauseOnSleep(target *Timer) {
+	a.mu.Lock()
+	for _, t := range a.timers {
+		if t == target {
+			t.PauseOnSleep = !t.PauseOnSleep
+			break
+		}
+	}
+	a.mu.Unlock()
+
+	a.saveAsync()
 }
 
 func (a *App) switchTo(index int) {
@@ -200,6 +257,7 @@ func (a *App) switchTo(index int) {
 		a.running = false
 		a.active = index
 	}
+	a.autoPaused = false // an explicit action overrides an auto-pause
 
 	a.saveAsync()
 }

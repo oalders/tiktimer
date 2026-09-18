@@ -269,6 +269,104 @@ func TestElapsedOfAndSetElapsed(t *testing.T) {
 	a.setElapsed(orphan, time.Hour) // must not panic
 }
 
+func TestPauseForSleepAndResume(t *testing.T) {
+	t.Run("opted-in running timer pauses on sleep and resumes on wake", func(t *testing.T) {
+		a := newTestApp(t, 1)
+		a.active = 0
+		a.timers[0].PauseOnSleep = true
+		a.running = true
+		a.lastTick = time.Now().Add(-3 * time.Second)
+
+		a.pauseForSleep()
+		if a.running || !a.autoPaused {
+			t.Fatalf("after sleep: running=%v autoPaused=%v want false/true", a.running, a.autoPaused)
+		}
+		// Time up to sleep was banked; the sleep interval itself is not counted.
+		banked := a.timers[0].Accumulated
+
+		a.resumeAfterWake()
+		if !a.running || a.autoPaused {
+			t.Fatalf("after wake: running=%v autoPaused=%v want true/false", a.running, a.autoPaused)
+		}
+		if a.timers[0].Accumulated != banked {
+			t.Errorf("accumulated changed across wake: got %v want %v", a.timers[0].Accumulated, banked)
+		}
+	})
+
+	t.Run("opted-out timer keeps running through sleep", func(t *testing.T) {
+		a := newTestApp(t, 1)
+		a.active = 0
+		a.timers[0].PauseOnSleep = false
+		a.running = true
+
+		a.pauseForSleep()
+		if !a.running || a.autoPaused {
+			t.Errorf("opted-out timer should be untouched: running=%v autoPaused=%v", a.running, a.autoPaused)
+		}
+	})
+
+	t.Run("a user-paused timer is not resumed on wake", func(t *testing.T) {
+		a := newTestApp(t, 1)
+		a.active = 0
+		a.timers[0].PauseOnSleep = true
+		a.running = false // user already stopped it
+
+		a.pauseForSleep()   // no-op: not running
+		a.resumeAfterWake() // must not start it
+		if a.running {
+			t.Error("wake should not start a timer the user had stopped")
+		}
+	})
+
+	t.Run("pause and wake are idempotent across screen+system notifications", func(t *testing.T) {
+		a := newTestApp(t, 1)
+		a.active = 0
+		a.timers[0].PauseOnSleep = true
+		a.running = true
+
+		a.pauseForSleep()
+		a.pauseForSleep() // second notification
+		if a.running || !a.autoPaused {
+			t.Fatalf("double sleep: running=%v autoPaused=%v", a.running, a.autoPaused)
+		}
+		a.resumeAfterWake()
+		a.resumeAfterWake() // second notification
+		if !a.running || a.autoPaused {
+			t.Fatalf("double wake: running=%v autoPaused=%v", a.running, a.autoPaused)
+		}
+	})
+
+	t.Run("a manual toggle while auto-paused cancels the auto-resume", func(t *testing.T) {
+		a := newTestApp(t, 1)
+		a.active = 0
+		a.timers[0].PauseOnSleep = true
+		a.running = true
+
+		a.pauseForSleep() // autoPaused = true
+		a.toggleActive()  // user manually starts it; clears autoPaused
+		if !a.running || a.autoPaused {
+			t.Fatalf("after manual toggle: running=%v autoPaused=%v want true/false", a.running, a.autoPaused)
+		}
+	})
+}
+
+func TestTogglePauseOnSleep(t *testing.T) {
+	a := newTestApp(t, 2)
+	target := a.timers[1]
+	if target.PauseOnSleep {
+		t.Fatal("PauseOnSleep should default to false")
+	}
+	a.togglePauseOnSleep(target)
+	if !a.timers[1].PauseOnSleep {
+		t.Error("toggle should enable PauseOnSleep")
+	}
+	a.togglePauseOnSleep(target)
+	if a.timers[1].PauseOnSleep {
+		t.Error("second toggle should disable PauseOnSleep")
+	}
+	a.togglePauseOnSleep(&Timer{Name: "gone"}) // unknown pointer: must not panic
+}
+
 func TestLogDirReady(t *testing.T) {
 	// A configured path is always considered ready (its parent dir is created
 	// on write); only the iCloud default path is gated on iCloud being present.
@@ -307,7 +405,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 
 	a := newApp()
 	a.home = dir
-	a.timers = []*Timer{{Name: "A", Accumulated: time.Minute}, {Name: "B"}}
+	a.timers = []*Timer{{Name: "A", Accumulated: time.Minute, PauseOnSleep: true}, {Name: "B"}}
 	a.active = 1
 	a.display = DisplayOdometer
 	a.logPath = "/custom/log.csv"
@@ -318,6 +416,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	loaded.load()
 	if len(loaded.timers) != 2 || loaded.timers[0].Name != "A" || loaded.timers[0].Accumulated != time.Minute {
 		t.Errorf("timers not restored: %+v", loaded.timers)
+	}
+	if !loaded.timers[0].PauseOnSleep || loaded.timers[1].PauseOnSleep {
+		t.Errorf("PauseOnSleep not restored: got %v/%v want true/false", loaded.timers[0].PauseOnSleep, loaded.timers[1].PauseOnSleep)
 	}
 	if loaded.active != 1 || loaded.display != DisplayOdometer || loaded.logPath != "/custom/log.csv" {
 		t.Errorf("scalar fields not restored: active=%d display=%q logPath=%q", loaded.active, loaded.display, loaded.logPath)

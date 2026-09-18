@@ -295,6 +295,24 @@ func (a *App) menuItems() []menuet.MenuItem {
 			},
 		})
 
+		sleepChildren := make([]menuet.MenuItem, len(a.timers))
+		for i, t := range a.timers {
+			tp := t
+			sleepChildren[i] = menuet.MenuItem{
+				Text:  t.Name,
+				State: t.PauseOnSleep,
+				Clicked: func() {
+					a.togglePauseOnSleep(tp)
+				},
+			}
+		}
+		items = append(items, menuet.MenuItem{
+			Text: "Pause on Sleep",
+			Children: func() []menuet.MenuItem {
+				return sleepChildren
+			},
+		})
+
 		children := make([]menuet.MenuItem, len(a.timers))
 		for i, t := range a.timers {
 			idx := i
@@ -319,6 +337,8 @@ func (a *App) menuItems() []menuet.MenuItem {
 func main() {
 	app := newApp()
 	app.load()
+
+	watchSleep(app)
 
 	go app.tick()
 
