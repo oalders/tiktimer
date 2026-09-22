@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/caseymrm/menuet"
+	"github.com/oalders/menuet"
 )
 
 func (a *App) updateTitle() {
