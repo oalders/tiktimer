@@ -6,4 +6,4 @@ require github.com/caseymrm/menuet v1.0.3
 
 require github.com/caseymrm/askm v1.0.0 // indirect
 
-replace github.com/caseymrm/menuet => /Users/olaf/Documents/github/oalders/menuet
+replace github.com/caseymrm/menuet => /Users/olaf/github/oalders/menuet
