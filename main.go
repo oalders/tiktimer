@@ -5,11 +5,22 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
 	"github.com/oalders/menuet"
 )
+
+// menuet drives AppKit, which requires all UI work to happen on the process's
+// main OS thread. Go may otherwise migrate the main goroutine to another
+// thread, so RunApplication's NSStatusBar setup aborts with "should only be
+// invalidated on the Main Thread". Pinning here in init (which runs on the main
+// thread before any goroutine starts) keeps main — and thus RunApplication — on
+// thread 0.
+func init() {
+	runtime.LockOSThread()
+}
 
 func (a *App) updateTitle() {
 	a.mu.Lock()
