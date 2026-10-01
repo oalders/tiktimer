@@ -32,7 +32,7 @@ func (a *App) updateTitle() {
 		if a.running {
 			acc += time.Since(a.lastTick)
 		}
-		timeStr := formatDuration(acc, true)
+		timeStr := formatDuration(acc, false)
 		dot := statusDot(a.running)
 		if a.display == DisplayOdometer {
 			noTemplate := false
@@ -59,10 +59,10 @@ func (a *App) updateTitle() {
 func (a *App) tick() {
 	saveInterval := 0
 	for {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(time.Second)
 		a.updateTitle()
 		saveInterval++
-		if saveInterval >= 300 { // every 30 seconds
+		if saveInterval >= 30 { // every 30 seconds
 			saveInterval = 0
 			a.mu.Lock()
 			if a.running {
@@ -378,7 +378,6 @@ func main() {
 		// Wait for the app to start before updating the UI
 		time.Sleep(500 * time.Millisecond)
 		app.updateTitle()
-		app.tick()
 	}()
 	menuet.App().RunApplication()
 }
