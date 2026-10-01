@@ -44,11 +44,47 @@ func TestResolveLogPath(t *testing.T) {
 	if got != want {
 		t.Errorf("empty config: got %q want %q", got, want)
 	}
-	if filepath.Base(want) != "tiktimer-log.csv" {
-		t.Errorf("default filename: got %q", filepath.Base(want))
+	// The default path is a per-machine file under a shared "tiktimer" folder.
+	// Assert on structure rather than the exact machine name so the test is
+	// host-independent (defaultLogPath shells out for LocalHostName).
+	if filepath.Ext(want) != ".csv" {
+		t.Errorf("default extension: got %q want .csv", filepath.Ext(want))
+	}
+	if base := filepath.Base(want); base == ".csv" || base == "" {
+		t.Errorf("default filename missing machine name: got %q", base)
+	}
+	if dir := filepath.Base(filepath.Dir(want)); dir != "tiktimer" {
+		t.Errorf("default subfolder: got %q want tiktimer", dir)
 	}
 	if filepath.Base(defaultLogDir()) != "com~apple~CloudDocs" {
 		t.Errorf("default dir: got %q", filepath.Base(defaultLogDir()))
+	}
+}
+
+func TestDeriveMachineName(t *testing.T) {
+	tests := []struct {
+		name          string
+		localHostName string
+		hostname      string
+		want          string
+	}{
+		{"local host name wins", "iMac", "imac.lan", "iMac"},
+		{"trailing newline trimmed", "iMac\n", "", "iMac"},
+		{"internal hyphen preserved", "Olafs-MacBook-Pro", "", "Olafs-MacBook-Pro"},
+		{"fall back to hostname", "", "imac.lan", "imac"},
+		{"hostname domain stripped at first dot", "", "host.example.com", "host"},
+		{"whitespace local falls through", "   ", "imac.lan", "imac"},
+		{"punctuation collapses to dashes", "", "Olaf's iMac", "Olaf-s-iMac"},
+		{"all-invalid falls through", "…", "imac", "imac"},
+		{"dot-only falls through to unknown", ".", "..", "unknown"},
+		{"both empty is unknown", "", "", "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := deriveMachineName(tt.localHostName, tt.hostname); got != tt.want {
+				t.Errorf("deriveMachineName(%q, %q) = %q, want %q", tt.localHostName, tt.hostname, got, tt.want)
+			}
+		})
 	}
 }
 

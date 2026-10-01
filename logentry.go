@@ -4,9 +4,11 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -32,9 +34,75 @@ func defaultLogDir() string {
 	return filepath.Join(home, "Library", "Mobile Documents", "com~apple~CloudDocs")
 }
 
-// defaultLogPath returns the default CSV location inside iCloud Drive.
+// sanitizeName trims surrounding whitespace, drops any DNS domain suffix
+// (everything from the first dot, so "imac.lan" becomes "imac"), and reduces
+// the rest to a filesystem-safe label: runs of anything outside [A-Za-z0-9_]
+// collapse to a single "-", with leading and trailing dashes trimmed. Input
+// that reduces to nothing usable (empty, whitespace, all-punctuation, "." or
+// "..") returns "", letting the caller fall back to another source.
+func sanitizeName(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if i := strings.IndexByte(raw, '.'); i >= 0 {
+		raw = raw[:i]
+	}
+	var b strings.Builder
+	prevDash := false
+	for _, r := range raw {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' {
+			b.WriteRune(r)
+			prevDash = false
+			continue
+		}
+		if !prevDash {
+			b.WriteByte('-')
+			prevDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+// deriveMachineName picks a filesystem-safe per-machine label, preferring the
+// LocalHostName (macOS's DNS/Bonjour-safe host identifier) and falling back to
+// the OS hostname, then to "unknown". Sanitization runs before the empty check
+// so a value that is only whitespace or punctuation also falls through.
+func deriveMachineName(localHostName, hostname string) string {
+	if n := sanitizeName(localHostName); n != "" {
+		return n
+	}
+	if n := sanitizeName(hostname); n != "" {
+		return n
+	}
+	return "unknown"
+}
+
+var (
+	machineNameOnce  sync.Once
+	machineNameValue string
+)
+
+// machineName returns the sanitized per-machine label, computed once per
+// process so the written file and any path shown to the user stay consistent
+// even if the host is renamed mid-session. Note: renaming the machine's
+// LocalHostName starts a fresh per-machine CSV rather than continuing the old
+// one — expected, not data loss.
+func machineName() string {
+	machineNameOnce.Do(func() {
+		var localHostName string
+		if out, err := exec.Command("scutil", "--get", "LocalHostName").Output(); err == nil {
+			localHostName = string(out)
+		}
+		hostname, _ := os.Hostname()
+		machineNameValue = deriveMachineName(localHostName, hostname)
+	})
+	return machineNameValue
+}
+
+// defaultLogPath returns the default CSV location inside iCloud Drive: a
+// per-machine file under a shared "tiktimer" folder (e.g. tiktimer/iMac.csv).
+// Each machine writes only its own file, so iCloud never has to merge
+// concurrent appends, while everything stays in one folder for recovery.
 func defaultLogPath() string {
-	return filepath.Join(defaultLogDir(), "tiktimer-log.csv")
+	return filepath.Join(defaultLogDir(), "tiktimer", machineName()+".csv")
 }
 
 // resolveLogPath returns configPath if set, otherwise the iCloud default.
