@@ -105,10 +105,10 @@ func readCSV(t *testing.T, path string) [][]string {
 func TestAppendLogRowCreatesHeaderThenAppends(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "log.csv")
 
-	if err := appendLogRow(path, "2026-07-23T14:30:00-04:00", "Acme", "01:23:45", "1.40", "first"); err != nil {
+	if err := appendLogRow(path, "2026-07-23T14:30:00-04:00", "Acme", "01:23:45", "1.40", "first", "01:23:45"); err != nil {
 		t.Fatalf("first append: %v", err)
 	}
-	if err := appendLogRow(path, "2026-07-23T15:00:00-04:00", "Acme", "00:10:00", "0.17", "second"); err != nil {
+	if err := appendLogRow(path, "2026-07-23T15:00:00-04:00", "Acme", "00:10:00", "0.17", "second", "00:09:12"); err != nil {
 		t.Fatalf("second append: %v", err)
 	}
 
@@ -116,7 +116,7 @@ func TestAppendLogRowCreatesHeaderThenAppends(t *testing.T) {
 	if len(rows) != 3 {
 		t.Fatalf("want 3 rows (header + 2), got %d: %v", len(rows), rows)
 	}
-	wantHeader := []string{"timestamp", "name", "duration", "hours", "note"}
+	wantHeader := []string{"timestamp", "name", "duration", "hours", "note", "tracked"}
 	for i, h := range wantHeader {
 		if rows[0][i] != h {
 			t.Errorf("header col %d: got %q want %q", i, rows[0][i], h)
@@ -124,6 +124,9 @@ func TestAppendLogRowCreatesHeaderThenAppends(t *testing.T) {
 	}
 	if rows[1][4] != "first" || rows[2][4] != "second" {
 		t.Errorf("data rows wrong: %v", rows)
+	}
+	if rows[2][5] != "00:09:12" {
+		t.Errorf("tracked: got %q want %q", rows[2][5], "00:09:12")
 	}
 }
 
@@ -133,7 +136,7 @@ func TestAppendLogRowWritesHeaderForZeroByteFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte{}, 0644); err != nil {
 		t.Fatalf("precreate: %v", err)
 	}
-	if err := appendLogRow(path, "2026-07-23T14:30:00-04:00", "Acme", "01:00:00", "1.00", "x"); err != nil {
+	if err := appendLogRow(path, "2026-07-23T14:30:00-04:00", "Acme", "01:00:00", "1.00", "x", "00:57:00"); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	rows := readCSV(t, path)
@@ -145,7 +148,7 @@ func TestAppendLogRowWritesHeaderForZeroByteFile(t *testing.T) {
 func TestAppendLogRowEscapesNote(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "log.csv")
 	note := `fixed "login", again`
-	if err := appendLogRow(path, "2026-07-23T14:30:00-04:00", "Acme", "01:00:00", "1.00", note); err != nil {
+	if err := appendLogRow(path, "2026-07-23T14:30:00-04:00", "Acme", "01:00:00", "1.00", note, "01:00:00"); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	rows := readCSV(t, path)
@@ -190,5 +193,28 @@ func TestParseHMS(t *testing.T) {
 		if err != nil || got != d {
 			t.Errorf("round-trip %v: format=%q parse=%v err=%v", d, dur, got, err)
 		}
+	}
+}
+
+func TestRoundUpTo(t *testing.T) {
+	cases := []struct {
+		name string
+		d    time.Duration
+		inc  time.Duration
+		want time.Duration
+	}{
+		{"zero stays zero", 0, 6 * time.Minute, 0},
+		{"one second bumps to one increment", time.Second, 6 * time.Minute, 6 * time.Minute},
+		{"partial increment rounds up", 13*time.Minute + 27*time.Second, 6 * time.Minute, 18 * time.Minute},
+		{"exact multiple is unchanged", 12 * time.Minute, 6 * time.Minute, 12 * time.Minute},
+		{"multi-hour", time.Hour + 31*time.Minute, 6 * time.Minute, time.Hour + 36*time.Minute},
+		{"non-positive increment is a no-op", 13 * time.Minute, 0, 13 * time.Minute},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := roundUpTo(c.d, c.inc); got != c.want {
+				t.Errorf("roundUpTo(%v, %v) = %v, want %v", c.d, c.inc, got, c.want)
+			}
+		})
 	}
 }

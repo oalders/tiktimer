@@ -28,6 +28,22 @@ func formatEntryFields(d time.Duration) (string, string) {
 	return duration, hours
 }
 
+// billingIncrement is the unit the Log & Reset dialog's "Round Up" button
+// bumps the logged time to (6 minutes, i.e. a tenth of an hour).
+const billingIncrement = 6 * time.Minute
+
+// roundUpTo rounds d up to the next multiple of inc. A non-positive inc
+// returns d unchanged.
+func roundUpTo(d, inc time.Duration) time.Duration {
+	if inc <= 0 {
+		return d
+	}
+	if r := d % inc; r != 0 {
+		d += inc - r
+	}
+	return d
+}
+
 // defaultLogDir returns the macOS iCloud Drive base directory.
 func defaultLogDir() string {
 	home, _ := os.UserHomeDir()
@@ -141,8 +157,10 @@ func parseHMS(s string) (time.Duration, error) {
 // appendLogRow appends one time-entry row to the CSV at path, creating the
 // parent directory and a header row when needed. It returns the first error
 // encountered while writing, flushing, or closing the file so callers can
-// avoid resetting a timer whose time was never persisted.
-func appendLogRow(path, timestamp, name, duration, hours, note string) error {
+// avoid resetting a timer whose time was never persisted. tracked is the
+// timer's raw HH:MM:SS value, kept for audit when the logged duration was
+// rounded or edited.
+func appendLogRow(path, timestamp, name, duration, hours, note, tracked string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -159,12 +177,12 @@ func appendLogRow(path, timestamp, name, duration, hours, note string) error {
 
 	w := csv.NewWriter(f)
 	if needHeader {
-		if err := w.Write([]string{"timestamp", "name", "duration", "hours", "note"}); err != nil {
+		if err := w.Write([]string{"timestamp", "name", "duration", "hours", "note", "tracked"}); err != nil {
 			f.Close()
 			return err
 		}
 	}
-	if err := w.Write([]string{timestamp, name, duration, hours, note}); err != nil {
+	if err := w.Write([]string{timestamp, name, duration, hours, note, tracked}); err != nil {
 		f.Close()
 		return err
 	}

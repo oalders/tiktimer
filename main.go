@@ -93,19 +93,23 @@ func (a *App) logAndReset() {
 
 	// Prefill the elapsed time so the user can correct an over- or under-count
 	// before it is logged.
-	prefill, _ := formatEntryFields(snap.elapsed)
-	response := menuet.App().Alert(menuet.Alert{
-		MessageText:     "Log & Reset",
-		InformativeText: "Adjust the time if needed, and note how it was spent.",
-		Buttons:         []string{"Log & Reset", "Cancel"},
-		Inputs:          []string{"Time (HH:MM:SS)", "Note"},
-		InputValues:     []string{prefill, ""},
-	})
-	if response.Button != 0 {
-		return // Cancel or dismissed.
-	}
-	logDur := snap.elapsed
-	if len(response.Inputs) > 0 {
+	tracked, _ := formatEntryFields(snap.elapsed)
+	values := []string{tracked, ""}
+	var logDur time.Duration
+	for {
+		response := menuet.App().Alert(menuet.Alert{
+			MessageText:     "Log & Reset",
+			InformativeText: "Adjust the time if needed, and note how it was spent.",
+			Buttons:         []string{"Log & Reset", "Round Up to 6m", "Cancel"},
+			Inputs:          []string{"Time (HH:MM:SS)", "Note"},
+			InputValues:     values,
+		})
+		if response.Button != 0 && response.Button != 1 {
+			return // Cancel or dismissed.
+		}
+		if len(response.Inputs) < 2 {
+			return
+		}
 		parsed, err := parseHMS(response.Inputs[0])
 		if err != nil {
 			menuet.App().Alert(menuet.Alert{
@@ -115,12 +119,17 @@ func (a *App) logAndReset() {
 			})
 			return
 		}
-		logDur = parsed
+		if response.Button == 0 {
+			logDur = parsed
+			values = response.Inputs
+			break
+		}
+		// Every NSAlert button dismisses the alert, so "Round Up" reopens it
+		// with the rounded time and the note the user had typed so far.
+		rounded, _ := formatEntryFields(roundUpTo(parsed, billingIncrement))
+		values = []string{rounded, response.Inputs[1]}
 	}
-	note := ""
-	if len(response.Inputs) > 1 {
-		note = response.Inputs[1]
-	}
+	note := values[1]
 
 	if err := logDirReady(a.logPath); err != nil {
 		menuet.App().Alert(menuet.Alert{
@@ -134,7 +143,7 @@ func (a *App) logAndReset() {
 	durStr, hoursStr := formatEntryFields(logDur)
 	timestamp := time.Now().Format(time.RFC3339)
 	logPath := resolveLogPath(a.logPath)
-	if err := appendLogRow(logPath, timestamp, snap.name, durStr, hoursStr, note); err != nil {
+	if err := appendLogRow(logPath, timestamp, snap.name, durStr, hoursStr, note, tracked); err != nil {
 		menuet.App().Alert(menuet.Alert{
 			MessageText:     "Could not write log",
 			InformativeText: fmt.Sprintf("%v\n\nThe timer was not reset.", err),
