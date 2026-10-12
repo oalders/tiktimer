@@ -32,6 +32,10 @@ func formatEntryFields(d time.Duration) (string, string) {
 // bumps the logged time to (6 minutes, i.e. a tenth of an hour).
 const billingIncrement = 6 * time.Minute
 
+// roundUpLabel is the dialog button text, derived from billingIncrement so the
+// two cannot drift apart.
+var roundUpLabel = fmt.Sprintf("Round Up to %dm", int(billingIncrement/time.Minute))
+
 // roundUpTo rounds d up to the next multiple of inc. A non-positive inc
 // returns d unchanged.
 func roundUpTo(d, inc time.Duration) time.Duration {

@@ -76,6 +76,8 @@ func (a *App) tick() {
 
 // logAndReset snapshots the active timer's elapsed time, asks the user how the
 // time was spent, appends a CSV row for invoicing, and then zeros the timer.
+// The dialog's "Round Up" button reopens it with the time rounded up to the
+// next billingIncrement; the row's tracked column keeps the unrounded time.
 // The note prompt is modal, so the mutex is released around it (matching the
 // rename handler). The reset applies only if the snapshotted timer is still the
 // active one, because menuet dispatches other click handlers on their own
@@ -100,7 +102,7 @@ func (a *App) logAndReset() {
 		response := menuet.App().Alert(menuet.Alert{
 			MessageText:     "Log & Reset",
 			InformativeText: "Adjust the time if needed, and note how it was spent.",
-			Buttons:         []string{"Log & Reset", "Round Up to 6m", "Cancel"},
+			Buttons:         []string{"Log & Reset", roundUpLabel, "Cancel"},
 			Inputs:          []string{"Time (HH:MM:SS)", "Note"},
 			InputValues:     values,
 		})
@@ -114,10 +116,11 @@ func (a *App) logAndReset() {
 		if err != nil {
 			menuet.App().Alert(menuet.Alert{
 				MessageText:     "Invalid time",
-				InformativeText: fmt.Sprintf("%v\n\nUse HH:MM:SS. Nothing was logged.", err),
+				InformativeText: fmt.Sprintf("%v\n\nUse HH:MM:SS.", err),
 				Buttons:         []string{"OK"},
 			})
-			return
+			values = response.Inputs // Reopen with what was typed, note included.
+			continue
 		}
 		if response.Button == 0 {
 			logDur = parsed

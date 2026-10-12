@@ -30,8 +30,13 @@ The active-timer menu item **"Reset Current Timer"** is renamed to
 2. If the snapshotted duration is `< 1 second` (covers zero, sub-second, and
    negative durations from clock skew), the handler does nothing at all — no
    prompt, no row, no reset — and returns.
-3. Opens the existing menuet `Alert` with a single note input
-   ("How was this time spent?") and buttons `[Log & Reset]` `[Cancel]`.
+3. Opens the existing menuet `Alert` with a time input (prefilled with the
+   snapshotted elapsed time as `HH:MM:SS`, editable) and a note input, and
+   buttons `[Log & Reset]` `[Round Up to 6m]` `[Cancel]`. NSAlert dismisses on
+   every button, so **Round Up** reopens the dialog with the typed time rounded
+   up to the next 6-minute billing increment (`billingIncrement`) and the note
+   preserved. An unparseable time shows an error and reopens the dialog with
+   what was typed.
 4. **Cancel** → nothing changes; the timer keeps its accumulated time and
    keeps running if it was running.
 5. **Log & Reset** → append one row to the CSV built entirely from the
@@ -80,13 +85,13 @@ overwritten by the in-memory value within ~30 s.
 **Columns / header:**
 
 ```
-timestamp,name,duration,hours,note
+timestamp,name,duration,hours,note,tracked
 ```
 
 **Example row:**
 
 ```
-2026-07-23T14:30:00-04:00,Acme redesign,01:23:45,1.40,Fixed login bug
+2026-07-23T14:30:00-04:00,Acme redesign,01:24:00,1.40,Fixed login bug,01:23:45
 ```
 
 - `timestamp` — RFC3339 with timezone offset (`time.Now().Format(time.RFC3339)`).
@@ -97,6 +102,10 @@ timestamp,name,duration,hours,note
   which omits the hours field under one hour and does not zero-pad hours.
 - `hours` — decimal hours, 2 decimal places (`"%.2f"`), for rate math.
 - `note` — free text from the prompt; may be empty.
+- `tracked` — the timer's unrounded, unedited elapsed time at snapshot, as
+  `HH:MM:SS`, for audit when `duration` was rounded or edited. Added after the
+  original 5-column format; files created before it keep a 5-column header and
+  need `,tracked` appended to it by hand.
 
 Rows are written with `encoding/csv` so notes containing commas, quotes, or
 newlines are escaped correctly. The header is written when the file does not
