@@ -27,7 +27,9 @@ test: ## Run the Go test suite
 build: ## Build the tiktimer binary
 	CGO_ENABLED=1 go build -o $(BINARY) .
 
-run: app ## Build the app bundle and launch it for local development
+run: app ## Build the app bundle, stop any running instance, and launch it
+	-pkill -x $(BINARY)
+	sleep 1
 	open $(APP)
 
 app: build ## Build the binary and assemble TikTimer.app
