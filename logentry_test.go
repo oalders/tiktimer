@@ -218,3 +218,12 @@ func TestRoundUpTo(t *testing.T) {
 		})
 	}
 }
+
+func TestRoundUpLabel(t *testing.T) {
+	if got := roundUpLabel(6 * time.Minute); got != "Round Up to 6m" {
+		t.Errorf("6m: got %q", got)
+	}
+	if got := roundUpLabel(15 * time.Minute); got != "Round Up to 15m" {
+		t.Errorf("15m: got %q", got)
+	}
+}

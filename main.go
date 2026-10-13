@@ -76,8 +76,9 @@ func (a *App) tick() {
 
 // logAndReset snapshots the active timer's elapsed time, asks the user how the
 // time was spent, appends a CSV row for invoicing, and then zeros the timer.
-// The dialog's "Round Up" button reopens it with the time rounded up to the
-// next billingIncrement; the row's tracked column keeps the unrounded time.
+// Each "Round Up" button reopens the dialog with the time rounded up to the
+// next multiple of its billingIncrements entry; the row's tracked column keeps
+// the unrounded time.
 // The note prompt is modal, so the mutex is released around it (matching the
 // rename handler). The reset applies only if the snapshotted timer is still the
 // active one, because menuet dispatches other click handlers on their own
@@ -97,16 +98,22 @@ func (a *App) logAndReset() {
 	// before it is logged.
 	tracked, _ := formatEntryFields(snap.elapsed)
 	values := []string{tracked, ""}
+	// Buttons: Log & Reset, one Round Up per billing increment, then Cancel.
+	buttons := []string{"Log & Reset"}
+	for _, inc := range billingIncrements {
+		buttons = append(buttons, roundUpLabel(inc))
+	}
+	buttons = append(buttons, "Cancel")
 	var logDur time.Duration
 	for {
 		response := menuet.App().Alert(menuet.Alert{
 			MessageText:     "Log & Reset",
 			InformativeText: "Adjust the time if needed, and note how it was spent.",
-			Buttons:         []string{"Log & Reset", roundUpLabel, "Cancel"},
+			Buttons:         buttons,
 			Inputs:          []string{"Time (HH:MM:SS)", "Note"},
 			InputValues:     values,
 		})
-		if response.Button != 0 && response.Button != 1 {
+		if response.Button < 0 || response.Button > len(billingIncrements) {
 			return // Cancel or dismissed.
 		}
 		if len(response.Inputs) < 2 {
@@ -129,7 +136,8 @@ func (a *App) logAndReset() {
 		}
 		// Every NSAlert button dismisses the alert, so "Round Up" reopens it
 		// with the rounded time and the note the user had typed so far.
-		rounded, _ := formatEntryFields(roundUpTo(parsed, billingIncrement))
+		inc := billingIncrements[response.Button-1]
+		rounded, _ := formatEntryFields(roundUpTo(parsed, inc))
 		values = []string{rounded, response.Inputs[1]}
 	}
 	note := values[1]

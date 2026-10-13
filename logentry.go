@@ -28,13 +28,16 @@ func formatEntryFields(d time.Duration) (string, string) {
 	return duration, hours
 }
 
-// billingIncrement is the unit the Log & Reset dialog's "Round Up" button
-// bumps the logged time to (6 minutes, i.e. a tenth of an hour).
-const billingIncrement = 6 * time.Minute
+// billingIncrements are the units the Log & Reset dialog offers "Round Up"
+// buttons for, in button order: a tenth of an hour and a quarter hour. Each
+// must be a whole number of minutes, since roundUpLabel labels in minutes.
+var billingIncrements = []time.Duration{6 * time.Minute, 15 * time.Minute}
 
-// roundUpLabel is the dialog button text, derived from billingIncrement so the
-// two cannot drift apart.
-var roundUpLabel = fmt.Sprintf("Round Up to %dm", int(billingIncrement/time.Minute))
+// roundUpLabel is the dialog button text for inc, derived from the increment so
+// the label cannot drift from what the button does.
+func roundUpLabel(inc time.Duration) string {
+	return fmt.Sprintf("Round Up to %dm", int(inc/time.Minute))
+}
 
 // roundUpTo rounds d up to the next multiple of inc. A non-positive inc
 // returns d unchanged.

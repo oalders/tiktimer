@@ -32,11 +32,11 @@ The active-timer menu item **"Reset Current Timer"** is renamed to
    prompt, no row, no reset — and returns.
 3. Opens the existing menuet `Alert` with a time input (prefilled with the
    snapshotted elapsed time as `HH:MM:SS`, editable) and a note input, and
-   buttons `[Log & Reset]` `[Round Up to 6m]` `[Cancel]`. NSAlert dismisses on
-   every button, so **Round Up** reopens the dialog with the typed time rounded
-   up to the next 6-minute billing increment (`billingIncrement`) and the note
-   preserved. An unparseable time shows an error and reopens the dialog with
-   what was typed.
+   buttons `[Log & Reset]` `[Round Up to 6m]` `[Round Up to 15m]` `[Cancel]`.
+   NSAlert dismisses on every button, so each **Round Up** button reopens the
+   dialog with the typed time rounded up to the next multiple of its billing
+   increment (`billingIncrements`) and the note preserved. An unparseable
+   time shows an error and reopens the dialog with what was typed.
 4. **Cancel** → nothing changes; the timer keeps its accumulated time and
    keeps running if it was running.
 5. **Log & Reset** → append one row to the CSV built entirely from the
