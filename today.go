@@ -80,6 +80,53 @@ func dayBounds(now time.Time) (time.Time, time.Time) {
 	return start, start.AddDate(0, 0, 1)
 }
 
+// workedBeforeToday reports whether time that last accrued at lastRun belongs
+// to an earlier work day than now's. A zero lastRun counts as today.
+func workedBeforeToday(lastRun, now time.Time) bool {
+	start, _ := dayBounds(now)
+	return !lastRun.IsZero() && lastRun.Before(start)
+}
+
+// logTimestamp is the time a Log & Reset row is dated: now, or when the timer
+// last ran if all its time is from an earlier work day, so clearing out
+// yesterday's timers in the morning files that work under yesterday. A timer
+// that ran on both days is dated now.
+func logTimestamp(lastRun, now time.Time) time.Time {
+	if workedBeforeToday(lastRun, now) {
+		return lastRun
+	}
+	return now
+}
+
+// yesterdayTimestamp dates a row the user chose to log as the previous work
+// day's (the yesterdayButton), for when a few seconds of accidental
+// running today would otherwise date it now: when the timer last ran, if that
+// was before today's work day, otherwise 23:59 on the previous work day.
+func yesterdayTimestamp(lastRun, now time.Time) time.Time {
+	if workedBeforeToday(lastRun, now) {
+		return lastRun
+	}
+	start, _ := dayBounds(now)
+	y, m, d := start.AddDate(0, 0, -1).Date()
+	return time.Date(y, m, d, 23, 59, 0, 0, now.Location())
+}
+
+// yesterdayButton is the Log & Reset dialog button that dates the row on the
+// previous work day; named as a variant of Log & Reset so it is clearly an
+// alternative to it, not an extra step.
+const yesterdayButton = "Log & Reset as Yesterday"
+
+// yesterdayHint explains, in the dialog, the date each Log & Reset button gives.
+func yesterdayHint(when time.Time) string {
+	return fmt.Sprintf("Log & Reset dates it now; %s dates it %s.", yesterdayButton, when.Format("Mon Jan 2 15:04"))
+}
+
+// backdatedNote tells the user a Log & Reset row is dated on an earlier work
+// day rather than now.
+func backdatedNote(when time.Time) string {
+	return "Dated " + when.Format("Mon Jan 2 15:04") + ", an earlier work day."
+}
+
 // readTodayLogged sums each project's logged duration for now's work day
 // across paths. Missing files count as zero. Rows are read by position with a
 // variable field count, because files predating the tracked column have a

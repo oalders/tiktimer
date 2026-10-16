@@ -103,9 +103,8 @@ headline `Today  0h 00m of 8h` plus the (empty-track) bar.
 ### Unlogged time
 - For each timer, its current accumulated time (plus in-flight running time
   for the active running timer), taken under the mutex like the existing menu
-  rows. It's keyed by timer name. All of it counts as "today", because the
-  timers only hold time that hasn't been logged yet. A timer carrying time from a previous day will
-  inflate today slightly, which is accepted (the row makes it visible).
+  rows. It's keyed by timer name. Time left over from an earlier work day is
+  excluded (see Revisions: leftover timer time).
 
 ### Ordering and colors
 Projects are ordered by timer order first, then CSV-only names (renamed or
@@ -183,9 +182,9 @@ rest of the menu as today.
 - **Today is a half-open window** (originally midnight to midnight; now
   starting at 04:00, see below), built with `time.Date` and `AddDate(0,0,1)` so
   DST days are handled. Rows dated in the future are excluded.
-- **Double counting after a skipped reset:** when `resetIfActive` returns false,
-  the "Logged" alert says the timer was not reset and should be zeroed with
-  Set Time. Otherwise the summary counts that time twice.
+- **Double counting after a skipped reset:** originally the reset was skipped
+  if another timer became active mid-dialog; it now always applies (see "Log &
+  Reset works on any timer" below), warning only if the timer was removed.
 - **Locking:** lock, copy `logPath` plus the timer snapshot, unlock, read the files,
   then lock again for the rest of `menuItems`. The summary and the timer rows
   may differ by the instant between the two locks.
@@ -200,3 +199,20 @@ rest of the menu as today.
 - **The day starts at 4 am, not midnight:** the window is
   `[04:00 local, 04:00 next day)` (`dayStartHour`), so late-night work logged
   after midnight still counts toward the evening it belongs to.
+- **Leftover timer time belongs to its own day:** each timer saves `lastRun`
+  (when time last accrued: `flushActive`, or Set Time raising the value). A
+  stopped timer whose `lastRun` is before the current work day contributes
+  nothing to Today, and Log & Reset dates its row at `lastRun` instead of now,
+  so the CSV and the spreadsheet file it under the day it was worked. The
+  "Logged" alert says when a row was backdated. A timer that ran on both days
+  is dated now (accepted). Timers saved before `lastRun` existed count as
+  today.
+- **Log & Reset works on any timer:** it is a submenu of all timers (those
+  under a second are disabled), so logging one never pauses or switches the
+  running timer. The reset subtracts the logged snapshot from the timer
+  instead of zeroing it, so time a running timer gains while the dialog is
+  open is kept, and switching timers mid-dialog no longer skips the reset.
+- **Log & Reset as Yesterday:** a dialog button, shown unless the time is already from
+  an earlier day, dates the row at `lastRun` if that is before today's work
+  day, otherwise 23:59 on the previous work day. It covers a timer started by
+  accident for a few seconds this morning.

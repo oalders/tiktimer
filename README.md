@@ -54,10 +54,19 @@ today's rows from every machine's log in the iCloud `tiktimer` folder (or your
 custom `logPath`), plus whatever is on your timers now. Click any of it to
 reveal the log in Finder.
 
+Time left on a timer from an earlier day doesn't count toward today. When you
+Log & Reset such a timer, the row is dated when the timer last ran, so
+clearing out yesterday's timers in the morning files that work under
+yesterday. A timer that also ran today is dated now, unless you press **Log &
+Reset as Yesterday** in the dialog (useful after starting it by accident for a few
+seconds), which dates the row 23:59 on the previous day.
+
 The dropdown menu also lets you:
 
 - Switch between timers (click a timer name)
-- Reset the active timer
+- Log & Reset any timer (pick it from the submenu): write a CSV row with a
+  note, then take that time off the timer, without pausing or switching away
+  from the timer that's running
 - Add or remove timers
 - Set the daily target (default 8h)
 

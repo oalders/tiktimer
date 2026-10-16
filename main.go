@@ -76,17 +76,17 @@ func (a *App) tick() {
 	}
 }
 
-// logAndReset snapshots the active timer's elapsed time, asks the user how the
-// time was spent, appends a CSV row for invoicing, and then zeros the timer.
+// logAndReset snapshots target's elapsed time, asks the user how the time was
+// spent, appends a CSV row for invoicing, and then takes that time off the
+// timer. Any timer can be logged; the active one keeps running.
 // Each "Round Up" button reopens the dialog with the time rounded up to the
 // next multiple of its billingIncrements entry; the row's tracked column keeps
 // the unrounded time.
 // The note prompt is modal, so the mutex is released around it (matching the
-// rename handler). The reset applies only if the snapshotted timer is still the
-// active one, because menuet dispatches other click handlers on their own
-// goroutines while this Alert is open.
-func (a *App) logAndReset() {
-	snap, ok := a.snapshotActive()
+// rename handler); menuet dispatches other click handlers on their own
+// goroutines while this Alert is open, so the reset finds the timer by pointer.
+func (a *App) logAndReset(target *Timer) {
+	snap, ok := a.snapshotTimer(target)
 	if !ok {
 		return
 	}
@@ -100,22 +100,35 @@ func (a *App) logAndReset() {
 	// before it is logged.
 	tracked, _ := formatEntryFields(snap.elapsed)
 	values := []string{tracked, ""}
-	// Buttons: Log & Reset, one Round Up per billing increment, then Cancel.
+	// Buttons: Log & Reset, Log & Reset as Yesterday (unless the time is already
+	// from an earlier day and will be dated then), one Round Up per billing
+	// increment, then Cancel.
+	info := "Adjust the time if needed, and note how it was spent."
 	buttons := []string{"Log & Reset"}
+	yesterdayBtn := -1
+	if opened := time.Now(); workedBeforeToday(snap.lastRun, opened) {
+		info += "\n\n" + backdatedNote(snap.lastRun)
+	} else {
+		yesterdayBtn = len(buttons)
+		buttons = append(buttons, yesterdayButton)
+		info += "\n\n" + yesterdayHint(yesterdayTimestamp(snap.lastRun, opened))
+	}
+	roundBase := len(buttons)
 	for _, inc := range billingIncrements {
 		buttons = append(buttons, roundUpLabel(inc))
 	}
 	buttons = append(buttons, "Cancel")
 	var logDur time.Duration
+	asYesterday := false
 	for {
 		response := menuet.App().Alert(menuet.Alert{
 			MessageText:     "Log & Reset",
-			InformativeText: "Adjust the time if needed, and note how it was spent.",
+			InformativeText: info,
 			Buttons:         buttons,
 			Inputs:          []string{"Time (HH:MM:SS)", "Note"},
 			InputValues:     values,
 		})
-		if response.Button < 0 || response.Button > len(billingIncrements) {
+		if response.Button < 0 || response.Button >= roundBase+len(billingIncrements) {
 			return // Cancel or dismissed.
 		}
 		if len(response.Inputs) < 2 {
@@ -131,14 +144,15 @@ func (a *App) logAndReset() {
 			values = response.Inputs // Reopen with what was typed, note included.
 			continue
 		}
-		if response.Button == 0 {
+		if response.Button < roundBase {
 			logDur = parsed
 			values = response.Inputs
+			asYesterday = response.Button == yesterdayBtn
 			break
 		}
 		// Every NSAlert button dismisses the alert, so "Round Up" reopens it
 		// with the rounded time and the note the user had typed so far.
-		inc := billingIncrements[response.Button-1]
+		inc := billingIncrements[response.Button-roundBase]
 		rounded, _ := formatEntryFields(roundUpTo(parsed, inc))
 		values = []string{rounded, response.Inputs[1]}
 	}
@@ -154,7 +168,12 @@ func (a *App) logAndReset() {
 	}
 
 	durStr, hoursStr := formatEntryFields(logDur)
-	timestamp := time.Now().Format(time.RFC3339)
+	now := time.Now()
+	when := logTimestamp(snap.lastRun, now)
+	if asYesterday {
+		when = yesterdayTimestamp(snap.lastRun, now)
+	}
+	timestamp := when.Format(time.RFC3339)
 	logPath := resolveLogPath(a.logPath)
 	if err := appendLogRow(logPath, timestamp, snap.name, durStr, hoursStr, note, tracked); err != nil {
 		menuet.App().Alert(menuet.Alert{
@@ -166,10 +185,11 @@ func (a *App) logAndReset() {
 	}
 
 	msg := logSuccessMessage(durStr, hoursStr, snap.name, logPath)
-	if !a.resetIfActive(snap) {
-		// Another timer became active while the dialog was open. Until this
-		// one is zeroed, the Today summary counts its time twice.
-		msg += fmt.Sprintf("\n\n%q was not reset because another timer became active. Use Set Time to zero it.", snap.name)
+	if !when.Equal(now) {
+		msg += "\n\n" + backdatedNote(when)
+	}
+	if !a.resetLogged(snap) {
+		msg += fmt.Sprintf("\n\n%q was removed while this dialog was open, so there was nothing to reset.", snap.name)
 	}
 	a.saveAsync()
 
@@ -339,13 +359,31 @@ func (a *App) menuItems() []menuet.MenuItem {
 
 	items = append(items, menuet.MenuItem{Type: menuet.Separator})
 
-	if a.active >= 0 && a.active < len(a.timers) {
+	if len(a.timers) > 0 {
+		// Log & Reset works on any timer, so logging one never pauses or
+		// switches away from the timer in progress. Timers with nothing to log
+		// are left disabled.
+		logChildren := make([]menuet.MenuItem, len(a.timers))
+		for i, t := range a.timers {
+			tp := t
+			acc := t.Accumulated
+			if i == a.active && a.running {
+				acc += time.Since(a.lastTick)
+			}
+			logChildren[i] = menuet.MenuItem{Text: fmt.Sprintf("%s  %s", t.Name, formatDuration(acc, false))}
+			if acc >= time.Second {
+				logChildren[i].Clicked = func() { a.logAndReset(tp) }
+			}
+		}
 		items = append(items, menuet.MenuItem{
-			Text: "Log & Reset…",
-			Clicked: func() {
-				a.logAndReset()
+			Text: "Log & Reset",
+			Children: func() []menuet.MenuItem {
+				return logChildren
 			},
 		})
+	}
+
+	if a.active >= 0 && a.active < len(a.timers) {
 		activeTimer := a.timers[a.active]
 		activeName := activeTimer.Name
 		items = append(items, menuet.MenuItem{

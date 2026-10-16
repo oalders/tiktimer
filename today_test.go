@@ -420,3 +420,142 @@ func TestReadTodayLoggedBefore4amCountsPreviousEvening(t *testing.T) {
 		t.Errorf("got %v in %d entries, want 2h30m in 2 (evening and after-midnight rows)", got, tl.counts["Acme"])
 	}
 }
+
+func TestLogTimestampBackdatesLeftovers(t *testing.T) {
+	loc := time.FixedZone("EDT", -4*3600)
+	now := time.Date(2026, 10, 16, 7, 0, 0, 0, loc)
+	lastNight := time.Date(2026, 10, 15, 23, 40, 0, 0, loc)
+	afterMidnight := time.Date(2026, 10, 16, 1, 15, 0, 0, loc)
+	thisMorning := time.Date(2026, 10, 16, 6, 30, 0, 0, loc)
+	cases := []struct {
+		name    string
+		lastRun time.Time
+		want    time.Time
+	}{
+		{"last night", lastNight, lastNight},
+		{"after midnight is still yesterday", afterMidnight, afterMidnight},
+		{"ran this morning", thisMorning, now},
+		{"never recorded", time.Time{}, now},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := logTimestamp(c.lastRun, now); !got.Equal(c.want) {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestTodaySnapshotLeavesOutLeftovers(t *testing.T) {
+	a := newTestApp(t, 3)
+	yesterday := time.Now().AddDate(0, 0, -1).Add(-5 * time.Hour)
+	a.timers[0].Accumulated, a.timers[0].LastRun = 2*time.Hour, yesterday
+	a.timers[1].Accumulated, a.timers[1].LastRun = 30*time.Minute, time.Now()
+	a.timers[2].Accumulated, a.timers[2].LastRun = time.Hour, yesterday
+	a.active = 2
+	a.running = true
+	a.lastTick = time.Now()
+
+	timers, _, _ := a.todaySnapshot()
+	if len(timers) != 3 {
+		t.Fatalf("timers = %+v, want all three kept for stable colors", timers)
+	}
+	if timers[0].Elapsed != 0 {
+		t.Errorf("stopped leftover = %v, want 0", timers[0].Elapsed)
+	}
+	if timers[1].Elapsed != 30*time.Minute {
+		t.Errorf("today's timer = %v, want 30m", timers[1].Elapsed)
+	}
+	if timers[2].Elapsed < time.Hour {
+		t.Errorf("running timer = %v, want its full time, since it is running today", timers[2].Elapsed)
+	}
+}
+
+func TestLastRunTracksAccrual(t *testing.T) {
+	a := newTestApp(t, 1)
+	a.active = 0
+	a.running = true
+	a.lastTick = time.Now().Add(-time.Minute)
+	before := time.Now()
+	a.flushActive()
+	if a.timers[0].LastRun.Before(before) {
+		t.Errorf("flushActive left LastRun at %v", a.timers[0].LastRun)
+	}
+
+	old := time.Now().AddDate(0, 0, -2)
+	a.running = false
+	a.timers[0].LastRun = old
+	a.setElapsed(a.timers[0], 0)
+	a.saveWG.Wait()
+	if !a.timers[0].LastRun.Equal(old) {
+		t.Errorf("lowering the time moved LastRun to %v", a.timers[0].LastRun)
+	}
+	a.setElapsed(a.timers[0], time.Hour)
+	a.saveWG.Wait()
+	if a.timers[0].LastRun.Equal(old) {
+		t.Errorf("adding time by hand should count as worked now")
+	}
+
+	snap, _ := a.snapshotTimer(a.timers[0])
+	if !snap.lastRun.Equal(a.timers[0].LastRun) {
+		t.Errorf("stopped snapshot lastRun = %v, want %v", snap.lastRun, a.timers[0].LastRun)
+	}
+}
+
+func TestLastRunRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	a := newApp()
+	a.home = dir
+	when := time.Date(2026, 10, 15, 23, 40, 0, 0, time.Local)
+	a.timers = []*Timer{{Name: "Acme", Accumulated: time.Hour, LastRun: when}, {Name: "Fresh"}}
+	a.save()
+
+	raw, err := os.ReadFile(filepath.Join(dir, ".tiktimer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(raw), "lastRun") != 1 {
+		t.Errorf("want lastRun saved only for the timer that ran:\n%s", raw)
+	}
+	loaded := newApp()
+	loaded.home = dir
+	loaded.load()
+	if len(loaded.timers) != 2 || !loaded.timers[0].LastRun.Equal(when) || !loaded.timers[1].LastRun.IsZero() {
+		t.Errorf("loaded timers = %+v", loaded.timers)
+	}
+}
+
+func TestYesterdayTimestamp(t *testing.T) {
+	loc := time.FixedZone("EDT", -4*3600)
+	lastNight := time.Date(2026, 10, 15, 23, 40, 0, 0, loc)
+	cases := []struct {
+		name         string
+		lastRun, now time.Time
+		want         time.Time
+	}{
+		{"leftover keeps when it ran", lastNight, time.Date(2026, 10, 16, 9, 0, 0, 0, loc), lastNight},
+		{"ran a few seconds this morning", time.Date(2026, 10, 16, 8, 59, 50, 0, loc), time.Date(2026, 10, 16, 9, 0, 0, 0, loc), time.Date(2026, 10, 15, 23, 59, 0, 0, loc)},
+		{"never ran", time.Time{}, time.Date(2026, 10, 16, 9, 0, 0, 0, loc), time.Date(2026, 10, 15, 23, 59, 0, 0, loc)},
+		{"before 4am the previous work day is two dates back", time.Date(2026, 10, 16, 1, 0, 0, 0, loc), time.Date(2026, 10, 16, 2, 0, 0, 0, loc), time.Date(2026, 10, 14, 23, 59, 0, 0, loc)},
+		{"month boundary", time.Time{}, time.Date(2026, 11, 1, 9, 0, 0, 0, loc), time.Date(2026, 10, 31, 23, 59, 0, 0, loc)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := yesterdayTimestamp(c.lastRun, c.now)
+			if !got.Equal(c.want) {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+			if !workedBeforeToday(got, c.now) {
+				t.Errorf("%v is not before now's work day", got)
+			}
+		})
+	}
+}
+
+func TestYesterdayHint(t *testing.T) {
+	when := time.Date(2026, 10, 15, 23, 59, 0, 0, time.UTC)
+	want := "Log & Reset dates it now; Log & Reset as Yesterday dates it Thu Oct 15 23:59."
+	if got := yesterdayHint(when); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

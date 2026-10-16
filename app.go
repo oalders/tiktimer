@@ -17,6 +17,11 @@ type Timer struct {
 	// PauseOnSleep, when set, makes this timer stop while the display (or the
 	// system) sleeps and resume on wake, so away-from-desk time is not counted.
 	PauseOnSleep bool `json:"pauseOnSleep,omitempty"`
+	// LastRun is when time last accrued on this timer. Log & Reset dates a row
+	// with it when all the time is from before today's work day, and the Today
+	// summary leaves such leftover time out. Zero (older save files) means
+	// today.
+	LastRun time.Time `json:"lastRun,omitzero"`
 }
 
 type DisplayMode string
@@ -168,8 +173,11 @@ func soundForRunning(running bool) string {
 // flushActive saves elapsed time into the active timer. Caller must hold a.mu.
 func (a *App) flushActive() {
 	if a.running && a.active >= 0 && a.active < len(a.timers) {
-		a.timers[a.active].Accumulated += time.Since(a.lastTick)
-		a.lastTick = time.Now()
+		now := time.Now()
+		t := a.timers[a.active]
+		t.Accumulated += now.Sub(a.lastTick)
+		t.LastRun = now
+		a.lastTick = now
 	}
 }
 
@@ -331,40 +339,50 @@ func (a *App) toggleDisplay() {
 // timerSnapshot is a copy of one timer's current elapsed time, taken while the
 // mutex was held, so the UI can prompt the user without holding the lock.
 type timerSnapshot struct {
-	idx     int
 	ptr     *Timer
 	name    string
 	elapsed time.Duration
+	lastRun time.Time
 }
 
-// snapshotActive returns a snapshot of the active timer's elapsed time,
-// including any time accrued since the last tick if it is running. ok is false
-// when there is no active timer.
-func (a *App) snapshotActive() (snap timerSnapshot, ok bool) {
+// snapshotTimer returns a snapshot of target's elapsed time, including any
+// time accrued since the last tick if it is the running timer. ok is false if
+// target no longer exists. Identified by pointer, so it works on any timer,
+// not only the active one.
+func (a *App) snapshotTimer(target *Timer) (snap timerSnapshot, ok bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if a.active < 0 || a.active >= len(a.timers) {
-		return timerSnapshot{}, false
+	for i, t := range a.timers {
+		if t != target {
+			continue
+		}
+		snap = timerSnapshot{ptr: t, name: t.Name, elapsed: t.Accumulated, lastRun: t.LastRun}
+		if i == a.active && a.running {
+			snap.elapsed += time.Since(a.lastTick)
+			snap.lastRun = time.Now()
+		}
+		return snap, true
 	}
-	ptr := a.timers[a.active]
-	elapsed := ptr.Accumulated
-	if a.running {
-		elapsed += time.Since(a.lastTick)
-	}
-	return timerSnapshot{idx: a.active, ptr: ptr, name: ptr.Name, elapsed: elapsed}, true
+	return timerSnapshot{}, false
 }
 
-// resetIfActive zeros the snapshotted timer, but only if it is still the active
-// one, at the same index (menuet may dispatch other handlers while a modal is
-// open). It reports whether the reset was applied.
-func (a *App) resetIfActive(snap timerSnapshot) bool {
+// resetLogged takes the snapshotted (now logged) time off its timer. Time the
+// timer gained since the snapshot, while the Log & Reset dialog was open, stays
+// on it, and the active and running state is untouched. It reports false if
+// the timer was removed meanwhile.
+func (a *App) resetLogged(snap timerSnapshot) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if a.active == snap.idx && snap.idx < len(a.timers) && a.timers[snap.idx] == snap.ptr {
-		a.timers[snap.idx].Accumulated = 0
-		a.lastTick = time.Now()
+	for i, t := range a.timers {
+		if t != snap.ptr {
+			continue
+		}
+		if i == a.active && a.running {
+			a.flushActive()
+		}
+		t.Accumulated = max(t.Accumulated-snap.elapsed, 0)
 		return true
 	}
 	return false
@@ -395,6 +413,9 @@ func (a *App) setElapsed(target *Timer, d time.Duration) {
 	a.mu.Lock()
 	for i, t := range a.timers {
 		if t == target {
+			if d > t.Accumulated {
+				t.LastRun = time.Now() // time added by hand counts as worked now
+			}
 			t.Accumulated = d
 			if i == a.active && a.running {
 				a.lastTick = time.Now()
@@ -438,10 +459,15 @@ func (a *App) setDailyTarget(d time.Duration) {
 func (a *App) todaySnapshot() (timers []timerTime, logPath string, target time.Duration) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	now := time.Now()
 	for i, t := range a.timers {
 		acc := t.Accumulated
 		if i == a.active && a.running {
-			acc += time.Since(a.lastTick)
+			acc += now.Sub(a.lastTick)
+		} else if workedBeforeToday(t.LastRun, now) {
+			// Leftover from an earlier day; it is dated then when logged. The
+			// timer stays in the list so palette colors do not shift.
+			acc = 0
 		}
 		timers = append(timers, timerTime{Name: t.Name, Elapsed: acc})
 	}

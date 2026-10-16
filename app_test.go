@@ -186,18 +186,17 @@ func TestToggleDisplay(t *testing.T) {
 	}
 }
 
-func TestSnapshotActive(t *testing.T) {
-	t.Run("no active timer", func(t *testing.T) {
-		a := newTestApp(t, 1) // active stays -1
-		if _, ok := a.snapshotActive(); ok {
-			t.Error("expected ok=false when no timer is active")
+func TestSnapshotTimer(t *testing.T) {
+	t.Run("removed timer", func(t *testing.T) {
+		a := newTestApp(t, 1)
+		if _, ok := a.snapshotTimer(&Timer{Name: "gone"}); ok {
+			t.Error("expected ok=false for a timer not in the list")
 		}
 	})
-	t.Run("paused timer reports accumulated time", func(t *testing.T) {
+	t.Run("stopped timer reports accumulated time", func(t *testing.T) {
 		a := newTestApp(t, 1)
-		a.active = 0
 		a.timers[0].Accumulated = 90 * time.Second
-		snap, ok := a.snapshotActive()
+		snap, ok := a.snapshotTimer(a.timers[0])
 		if !ok {
 			t.Fatal("expected ok=true")
 		}
@@ -211,37 +210,79 @@ func TestSnapshotActive(t *testing.T) {
 		a.timers[0].Accumulated = 10 * time.Second
 		a.running = true
 		a.lastTick = time.Now().Add(-2 * time.Second)
-		snap, _ := a.snapshotActive()
+		snap, _ := a.snapshotTimer(a.timers[0])
 		if snap.elapsed < 12*time.Second {
 			t.Errorf("elapsed: got %v want >= 12s", snap.elapsed)
 		}
 	})
-}
-
-func TestResetIfActive(t *testing.T) {
-	t.Run("resets when still active and unchanged", func(t *testing.T) {
-		a := newTestApp(t, 1)
+	t.Run("inactive timer ignores the running timer's ticks", func(t *testing.T) {
+		a := newTestApp(t, 2)
 		a.active = 0
-		a.timers[0].Accumulated = time.Minute
-		snap, _ := a.snapshotActive()
-		if !a.resetIfActive(snap) {
-			t.Fatal("expected reset to be applied")
-		}
-		if a.timers[0].Accumulated != 0 {
-			t.Errorf("accumulated: got %v want 0", a.timers[0].Accumulated)
+		a.running = true
+		a.lastTick = time.Now().Add(-time.Hour)
+		a.timers[1].Accumulated = time.Minute
+		snap, _ := a.snapshotTimer(a.timers[1])
+		if snap.elapsed != time.Minute {
+			t.Errorf("elapsed: got %v want 1m", snap.elapsed)
 		}
 	})
-	t.Run("does not reset when active changed since snapshot", func(t *testing.T) {
+}
+
+func TestResetLogged(t *testing.T) {
+	t.Run("logging an inactive timer leaves the running one alone", func(t *testing.T) {
+		a := newTestApp(t, 2)
+		a.active = 0
+		a.running = true
+		tick := time.Now().Add(-time.Minute)
+		a.lastTick = tick
+		a.timers[0].Accumulated = time.Hour
+		a.timers[1].Accumulated = 30 * time.Minute
+
+		snap, _ := a.snapshotTimer(a.timers[1])
+		if !a.resetLogged(snap) {
+			t.Fatal("expected reset to be applied")
+		}
+		if a.timers[1].Accumulated != 0 {
+			t.Errorf("logged timer: got %v want 0", a.timers[1].Accumulated)
+		}
+		if a.active != 0 || !a.running || !a.lastTick.Equal(tick) || a.timers[0].Accumulated != time.Hour {
+			t.Errorf("running timer disturbed: active=%d running=%v acc=%v", a.active, a.running, a.timers[0].Accumulated)
+		}
+	})
+	t.Run("running timer keeps time gained while the dialog was open", func(t *testing.T) {
+		a := newTestApp(t, 1)
+		a.active = 0
+		a.running = true
+		a.timers[0].Accumulated = 10 * time.Minute
+		a.lastTick = time.Now()
+		snap, _ := a.snapshotTimer(a.timers[0])
+		a.lastTick = a.lastTick.Add(-2 * time.Minute) // two minutes pass with the dialog open
+
+		a.resetLogged(snap)
+		if got := a.timers[0].Accumulated; got < 2*time.Minute || got > 3*time.Minute {
+			t.Errorf("accumulated: got %v want about 2m", got)
+		}
+		if !a.running {
+			t.Error("timer stopped")
+		}
+	})
+	t.Run("switching timers during the dialog still resets", func(t *testing.T) {
 		a := newTestApp(t, 2)
 		a.active = 0
 		a.timers[0].Accumulated = time.Minute
-		snap, _ := a.snapshotActive()
-		a.active = 1 // user switched while the modal was open
-		if a.resetIfActive(snap) {
-			t.Error("expected reset to be skipped after active changed")
+		snap, _ := a.snapshotTimer(a.timers[0])
+		a.active = 1
+		if !a.resetLogged(snap) || a.timers[0].Accumulated != 0 {
+			t.Errorf("accumulated: got %v want 0", a.timers[0].Accumulated)
 		}
-		if a.timers[0].Accumulated != time.Minute {
-			t.Errorf("accumulated: got %v want 1m", a.timers[0].Accumulated)
+	})
+	t.Run("removed timer", func(t *testing.T) {
+		a := newTestApp(t, 1)
+		a.timers[0].Accumulated = time.Minute
+		snap, _ := a.snapshotTimer(a.timers[0])
+		a.timers = nil
+		if a.resetLogged(snap) {
+			t.Error("expected false for a removed timer")
 		}
 	})
 }
