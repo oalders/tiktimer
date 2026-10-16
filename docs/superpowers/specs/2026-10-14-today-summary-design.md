@@ -92,8 +92,8 @@ headline `Today  0h 00m of 8h` plus the (empty-track) bar.
   are skipped. That can undercount until iCloud downloads them, which is accepted.
 - **Rows:** skip the header (first field `timestamp`). Accept both the
   5-column and 6-column formats. A row counts toward "today" when its RFC3339
-  `timestamp`, converted to local time, falls on today's local date (since
-  local midnight). The amount is taken from `duration` via `parseHMS`, the exact
+  `timestamp`, converted to local time, falls in the current work day (since
+  04:00 local; see Revisions). The amount is taken from `duration` via `parseHMS`, the exact
   logged (possibly rounded) value. There is no fallback to `hours`. Malformed
   rows are skipped.
 - **Project key:** the `name` column, `strings.TrimSpace`d, compared exactly.
@@ -147,7 +147,7 @@ rest of the menu as today.
 ## Testing
 
 - `readTodayLogged`: temp dir with two CSVs (5- and 6-column), rows from
-  yesterday/today/tomorrow around local midnight, a malformed row, a quoted
+  yesterday/today/tomorrow around the 04:00 day boundary, a malformed row, a quoted
   note containing a comma and newline; asserts sums, counts and first-seen order;
   an unreadable path sets `unreadable`.
 - `buildDaySummary`: timer-only project, CSV-only project, both, both empty
@@ -180,10 +180,9 @@ rest of the menu as today.
   ` · some logs not downloaded`.
 - **Missing ≠ unreadable:** a missing folder, no matching files, or a not-yet-created
   custom `logPath` all count as zero, with no warning.
-- **Today is a half-open window** `[local midnight, next local midnight)`, built
-  with `time.Date(…, time.Local)` and `AddDate(0,0,1)` so DST days are handled. Rows
-  dated in the future are excluded. Work logged after midnight counts toward the new
-  day, which is accepted.
+- **Today is a half-open window** (originally midnight to midnight; now
+  starting at 04:00, see below), built with `time.Date` and `AddDate(0,0,1)` so
+  DST days are handled. Rows dated in the future are excluded.
 - **Double counting after a skipped reset:** when `resetIfActive` returns false,
   the "Logged" alert says the timer was not reset and should be zeroed with
   Set Time. Otherwise the summary counts that time twice.
@@ -200,5 +199,4 @@ rest of the menu as today.
   left out. It still counts toward the headline total and the bar.
 - **The day starts at 4 am, not midnight:** the window is
   `[04:00 local, 04:00 next day)` (`dayStartHour`), so late-night work logged
-  after midnight still counts toward the evening it belongs to. This replaces
-  the "work logged after midnight counts toward the new day" tradeoff above.
+  after midnight still counts toward the evening it belongs to.

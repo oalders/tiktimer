@@ -95,6 +95,9 @@ func TestDayBoundsStartsAt4am(t *testing.T) {
 		{"afternoon", time.Date(2026, 10, 14, 15, 0, 0, 0, loc), time.Date(2026, 10, 14, 4, 0, 0, 0, loc)},
 		{"exactly 4am", time.Date(2026, 10, 14, 4, 0, 0, 0, loc), time.Date(2026, 10, 14, 4, 0, 0, 0, loc)},
 		{"late night belongs to previous day", time.Date(2026, 10, 15, 1, 30, 0, 0, loc), time.Date(2026, 10, 14, 4, 0, 0, 0, loc)},
+		{"midnight belongs to previous day", time.Date(2026, 10, 15, 0, 0, 0, 0, loc), time.Date(2026, 10, 14, 4, 0, 0, 0, loc)},
+		{"just before 4am", time.Date(2026, 10, 15, 3, 59, 59, 0, loc), time.Date(2026, 10, 14, 4, 0, 0, 0, loc)},
+		{"new year rolls back a year", time.Date(2027, 1, 1, 2, 0, 0, 0, loc), time.Date(2026, 12, 31, 4, 0, 0, 0, loc)},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -117,7 +120,7 @@ func TestDayBoundsDST(t *testing.T) {
 	if got := end.Sub(start); got != 25*time.Hour {
 		t.Errorf("fall-back day length = %v, want 25h", got)
 	}
-	if end.Hour() != dayStartHour || end.Day() != 1 || start.Day() != 31 {
+	if !start.Equal(time.Date(2026, 10, 31, 4, 0, 0, 0, loc)) || !end.Equal(time.Date(2026, 11, 1, 4, 0, 0, 0, loc)) {
 		t.Errorf("got [%v, %v), want 4 am Oct 31 to 4 am Nov 1", start, end)
 	}
 }
@@ -401,5 +404,19 @@ func TestLoadRejectsOutOfRangeTarget(t *testing.T) {
 		if got := a.dailyTargetValue(); got != defaultDailyTarget {
 			t.Errorf("dailyTargetHours %s: target = %v, want default", raw, got)
 		}
+	}
+}
+
+func TestReadTodayLoggedBefore4amCountsPreviousEvening(t *testing.T) {
+	loc := time.FixedZone("EDT", -4*3600)
+	now := time.Date(2026, 10, 16, 1, 30, 0, 0, loc)
+	p := filepath.Join(t.TempDir(), "iMac.csv")
+	writeFile(t, p, "timestamp,name,duration,hours,note,tracked\n"+
+		"2026-10-15T03:59:00-04:00,Acme,01:00:00,1.00,before the day,\n"+
+		"2026-10-15T23:00:00-04:00,Acme,02:00:00,2.00,evening,\n"+
+		"2026-10-16T00:09:00-04:00,Acme,00:30:00,0.50,after midnight,\n")
+	tl := readTodayLogged([]string{p}, now)
+	if got := tl.logged["Acme"]; got != 150*time.Minute || tl.counts["Acme"] != 2 {
+		t.Errorf("got %v in %d entries, want 2h30m in 2 (evening and after-midnight rows)", got, tl.counts["Acme"])
 	}
 }
