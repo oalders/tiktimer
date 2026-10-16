@@ -109,15 +109,15 @@ func renderDayBar(projects []projectTotal, target time.Duration) string {
 				cols[x] = c
 			}
 		}
-		for i, p := range projects {
-			c := paletteColor(i)
+		for _, p := range projects {
+			c := paletteColor(p.Color)
 			paint(p.Logged, c)
 			paint(p.Unlogged, unloggedShade(c))
 		}
 	}
 
 	img := image.NewNRGBA(image.Rect(0, 0, barW, barH))
-	for y := barTop - 1; y <= barBot; y++ {
+	for y := barTop; y < barBot; y++ {
 		for x := barLeft; x < barRight; x++ {
 			cov := pillCoverage(x, y)
 			if cov == 0 {
@@ -141,7 +141,7 @@ func renderDayBar(projects []projectTotal, target time.Duration) string {
 	return pngDataURI(img)
 }
 
-// renderSwatch draws project i's legend dot in its bar color.
+// renderSwatch draws the legend dot for palette index i.
 func renderSwatch(i int) string {
 	c := paletteColor(i)
 	img := image.NewNRGBA(image.Rect(0, 0, swatchSize, swatchSize))

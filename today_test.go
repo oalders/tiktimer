@@ -100,9 +100,33 @@ func TestDayBoundsDST(t *testing.T) {
 	}
 }
 
-func TestLogFilesToRead(t *testing.T) {
-	if got := logFilesToRead("/custom/log.csv"); len(got) != 1 || got[0] != "/custom/log.csv" {
-		t.Errorf("custom path: got %v", got)
+func TestMachineLogsIn(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"iMac.csv", "Olafs-MacBook-Pro.csv", "iMac 2.csv", "export (1).csv", "notes.txt"} {
+		writeFile(t, filepath.Join(dir, n), "")
+	}
+	got := machineLogsIn(dir)
+	var names []string
+	for _, p := range got {
+		names = append(names, filepath.Base(p))
+	}
+	if strings.Join(names, ",") != "Olafs-MacBook-Pro.csv,iMac.csv" {
+		t.Errorf("got %v, want only the per-machine CSVs (no conflict copies or exports)", names)
+	}
+}
+
+func TestReadTodayLoggedFlagsBadQuote(t *testing.T) {
+	now := time.Date(2026, 10, 14, 15, 0, 0, 0, time.Local)
+	p := filepath.Join(t.TempDir(), "iMac.csv")
+	writeFile(t, p, "timestamp,name,duration,hours,note\n"+
+		"2026-10-14T09:00:00"+now.Format("-07:00")+",Acme,01:00:00,1.00,ok\n"+
+		"2026-10-14T10:00:00"+now.Format("-07:00")+",Acme,01:00:00,1.00,bad \"quote\n")
+	tl := readTodayLogged([]string{p}, now)
+	if !tl.unreadable {
+		t.Errorf("a quoting error can swallow rows, so it should flag the log")
+	}
+	if tl.logged["Acme"] != time.Hour {
+		t.Errorf("rows before the bad quote should still count, got %v", tl.logged["Acme"])
 	}
 }
 
@@ -118,10 +142,13 @@ func TestBuildDaySummary(t *testing.T) {
 		order:  []string{"Old Name", "Acme", "Globex"},
 	}
 	got := buildDaySummary(timers, tl)
+	// Color is the position among all timers and names, so the idle timer
+	// still reserves palette slot 0 and the others keep their colors when it
+	// starts.
 	want := []projectTotal{
-		{Name: "Globex", Logged: time.Hour, Unlogged: 23 * time.Minute, Entries: 3},
-		{Name: "Acme", Logged: 2 * time.Hour, Entries: 2},
-		{Name: "Old Name", Logged: time.Hour, Entries: 1},
+		{Name: "Globex", Logged: time.Hour, Unlogged: 23 * time.Minute, Entries: 3, Color: 1},
+		{Name: "Acme", Logged: 2 * time.Hour, Entries: 2, Color: 2},
+		{Name: "Old Name", Logged: time.Hour, Entries: 1, Color: 3},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %+v, want %+v", got, want)
@@ -136,8 +163,10 @@ func TestBuildDaySummary(t *testing.T) {
 func TestBuildDaySummaryTimerOnly(t *testing.T) {
 	timers := []timerTime{{Name: "Acme", Elapsed: time.Minute}, {Name: "Blip", Elapsed: 59 * time.Second}}
 	got := buildDaySummary(timers, readTodayLogged(nil, time.Now()))
-	if len(got) != 1 || got[0].Name != "Acme" || got[0].Unlogged != time.Minute || got[0].Entries != 0 {
-		t.Errorf("want only Acme (Blip is under a minute), got %+v", got)
+	// Blip stays in the summary so its seconds count toward the total and the
+	// bar, but it gets no row of its own.
+	if len(got) != 2 || !got[0].ShowRow() || got[1].ShowRow() {
+		t.Errorf("want Acme shown and Blip hidden, got %+v", got)
 	}
 }
 
@@ -213,7 +242,7 @@ func TestParseTargetHours(t *testing.T) {
 			t.Errorf("parseTargetHours(%q) = %v, %v; want %v", in, got, err, want)
 		}
 	}
-	for _, in := range []string{"", "0", "-1", "25", "eight"} {
+	for _, in := range []string{"", "0", "-1", "25", "eight", "nan", "NaN", "inf", "0.004"} {
 		if _, err := parseTargetHours(in); err == nil {
 			t.Errorf("parseTargetHours(%q) should fail", in)
 		}
@@ -302,8 +331,8 @@ func TestDailyTargetRoundTrip(t *testing.T) {
 	if got := a.dailyTargetValue(); got != defaultDailyTarget {
 		t.Errorf("default = %v, want %v", got, defaultDailyTarget)
 	}
-	a.dailyTarget = 7*time.Hour + 30*time.Minute
-	a.save()
+	a.setDailyTarget(7*time.Hour + 30*time.Minute)
+	a.saveWG.Wait()
 
 	loaded := newApp()
 	loaded.home = dir
@@ -316,17 +345,39 @@ func TestDailyTargetRoundTrip(t *testing.T) {
 func TestTodaySnapshot(t *testing.T) {
 	a := newTestApp(t, 2)
 	a.timers[0].Accumulated = time.Hour
+	a.timers[1].Accumulated = 10 * time.Minute
 	a.active = 1
-	a.running = true
 	a.lastTick = time.Now().Add(-time.Minute)
+
+	// Stopped: the active timer reports exactly its accumulated time.
 	timers, _, target := a.todaySnapshot()
-	if len(timers) != 2 || timers[0].Elapsed != time.Hour {
-		t.Fatalf("timers = %+v", timers)
-	}
-	if timers[1].Elapsed < time.Minute {
-		t.Errorf("running timer should include in-flight time, got %v", timers[1].Elapsed)
+	if len(timers) != 2 || timers[0].Elapsed != time.Hour || timers[1].Elapsed != 10*time.Minute {
+		t.Fatalf("stopped: timers = %+v", timers)
 	}
 	if target != defaultDailyTarget {
 		t.Errorf("target = %v", target)
+	}
+
+	// Running: only the active timer gains in-flight time.
+	a.running = true
+	timers, _, _ = a.todaySnapshot()
+	if timers[0].Elapsed != time.Hour {
+		t.Errorf("inactive timer changed: %v", timers[0].Elapsed)
+	}
+	if got := timers[1].Elapsed; got < 11*time.Minute || got >= 12*time.Minute {
+		t.Errorf("running timer = %v, want 10m plus about a minute in flight", got)
+	}
+}
+
+func TestLoadRejectsOutOfRangeTarget(t *testing.T) {
+	for _, raw := range []string{`1e18`, `-3`, `25`} {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, ".tiktimer.json"), `{"timers":[],"active":-1,"dailyTargetHours":`+raw+`}`)
+		a := newApp()
+		a.home = dir
+		a.load()
+		if got := a.dailyTargetValue(); got != defaultDailyTarget {
+			t.Errorf("dailyTargetHours %s: target = %v, want default", raw, got)
+		}
 	}
 }

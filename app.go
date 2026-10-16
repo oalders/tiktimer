@@ -108,7 +108,11 @@ func (a *App) load() {
 		a.display = data.Display
 	}
 	a.logPath = data.LogPath
-	a.dailyTarget = time.Duration(data.DailyTargetHours * float64(time.Hour)).Round(time.Minute)
+	// The save file can be hand-edited; an out-of-range target falls back to
+	// the default rather than skewing the Today summary.
+	if h := data.DailyTargetHours; h > 0 && h <= 24 {
+		a.dailyTarget = time.Duration(h * float64(time.Hour)).Round(time.Minute)
+	}
 }
 
 func formatDuration(d time.Duration, showTenths bool) string {
@@ -352,8 +356,8 @@ func (a *App) snapshotActive() (snap timerSnapshot, ok bool) {
 }
 
 // resetIfActive zeros the snapshotted timer, but only if it is still the active
-// one and unchanged since the snapshot (menuet may dispatch other handlers
-// while a modal is open). It reports whether the reset was applied.
+// one, at the same index (menuet may dispatch other handlers while a modal is
+// open). It reports whether the reset was applied.
 func (a *App) resetIfActive(snap timerSnapshot) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()

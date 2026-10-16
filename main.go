@@ -250,10 +250,13 @@ func (a *App) todayItems() []menuet.MenuItem {
 		{Text: headlineText(total, target, tl), FontWeight: menuet.WeightBold, Clicked: reveal},
 		{Image: renderDayBar(projects, target), Clicked: reveal},
 	}
-	for i, p := range projects {
+	for _, p := range projects {
+		if !p.ShowRow() {
+			continue
+		}
 		items = append(items, menuet.MenuItem{
 			Text:    rowText(p),
-			Image:   renderSwatch(i),
+			Image:   renderSwatch(p.Color),
 			Clicked: reveal,
 		})
 	}
@@ -263,15 +266,25 @@ func (a *App) todayItems() []menuet.MenuItem {
 // revealLog shows the log in Finder: the file itself for a custom logPath,
 // otherwise the shared iCloud folder holding every machine's CSV.
 func revealLog(logPath string) {
+	target := filepath.Dir(defaultLogPath())
+	reveal := false
 	if logPath != "" {
+		target = filepath.Dir(logPath)
 		if _, err := os.Stat(logPath); err == nil {
-			go exec.Command("open", "-R", logPath).Run()
-			return
+			target, reveal = logPath, true
 		}
-		go exec.Command("open", filepath.Dir(logPath)).Run()
+	}
+	// An absolute path always starts with "/", so a logPath beginning with
+	// "-" can never be parsed as an option to open.
+	target, err := filepath.Abs(target)
+	if err != nil {
 		return
 	}
-	go exec.Command("open", filepath.Dir(defaultLogPath())).Run()
+	if reveal {
+		go exec.Command("open", "-R", target).Run()
+		return
+	}
+	go exec.Command("open", target).Run()
 }
 
 // setDailyTargetPrompt asks for the Today summary's daily target in hours.

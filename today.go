@@ -22,6 +22,9 @@ const defaultDailyTarget = 8 * time.Hour
 // would freeze the menu (menuItems runs on the main thread).
 const sfDataless = 0x40000000
 
+// maxLogBytes caps how much of each log file the Today summary reads.
+const maxLogBytes = 32 << 20
+
 // logFilesToRead lists the CSVs the Today summary sums. A custom logPath is
 // read alone; the default reads every per-machine CSV in the shared iCloud
 // folder, so time logged on the other Mac counts too.
@@ -29,8 +32,23 @@ func logFilesToRead(configPath string) []string {
 	if configPath != "" {
 		return []string{configPath}
 	}
-	matches, _ := filepath.Glob(filepath.Join(filepath.Dir(defaultLogPath()), "*.csv"))
-	return matches
+	return machineLogsIn(filepath.Dir(defaultLogPath()))
+}
+
+// machineLogsIn lists the per-machine CSVs in dir: files whose base name is
+// already a sanitized machine name (see defaultLogPath). That skips iCloud
+// conflict copies ("iMac 2.csv") and stray exports, which would otherwise
+// count the same rows twice.
+func machineLogsIn(dir string) []string {
+	matches, _ := filepath.Glob(filepath.Join(dir, "*.csv"))
+	var out []string
+	for _, m := range matches {
+		base := strings.TrimSuffix(filepath.Base(m), ".csv")
+		if base != "" && sanitizeName(base) == base {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // todayLog is the logged time read from the CSVs for one local day.
@@ -87,7 +105,9 @@ func (tl *todayLog) readFile(path string, start, end time.Time, loc *time.Locati
 	}
 	defer f.Close()
 
-	r := csv.NewReader(f)
+	// Cap each file so a huge or corrupt file in the synced folder cannot hang
+	// the menu; a real log is a few kilobytes per day.
+	r := csv.NewReader(io.LimitReader(f, maxLogBytes))
 	r.FieldsPerRecord = -1
 	for {
 		rec, err := r.Read()
@@ -95,9 +115,11 @@ func (tl *todayLog) readFile(path string, start, end time.Time, loc *time.Locati
 			return nil
 		}
 		if err != nil {
-			// A quoting error leaves the reader past the bad record; keep going.
+			// A quoting error leaves the reader past the bad record; keep going,
+			// but flag it, since an unterminated quote can swallow later rows.
 			var pe *csv.ParseError
 			if errors.As(err, &pe) {
+				tl.unreadable = true
 				continue
 			}
 			return err
@@ -132,9 +154,18 @@ type projectTotal struct {
 	Logged   time.Duration
 	Unlogged time.Duration
 	Entries  int
+	// Color is the project's palette index, fixed by its position among all
+	// timers and logged names, so it does not shift as other projects come
+	// and go from the summary.
+	Color int
 }
 
 func (p projectTotal) Total() time.Duration { return p.Logged + p.Unlogged }
+
+// ShowRow reports whether the project gets its own row. Under a minute of
+// timer time with nothing logged is noise; it still counts toward the
+// headline total and the bar.
+func (p projectTotal) ShowRow() bool { return p.Entries > 0 || p.Unlogged >= time.Minute }
 
 // timerTime is a timer's name and its current (not yet logged) elapsed time.
 type timerTime struct {
@@ -145,8 +176,7 @@ type timerTime struct {
 // buildDaySummary merges timer time with today's logged time, keyed by name.
 // Timer order comes first, then CSV-only names (renamed or removed timers) in
 // order of first appearance, so each project's palette color stays stable
-// through the day. Projects with nothing logged and under a minute on the
-// timer are omitted.
+// through the day. Projects with no time at all are omitted.
 func buildDaySummary(timers []timerTime, tl todayLog) []projectTotal {
 	byName := map[string]*projectTotal{}
 	var ordered []*projectTotal
@@ -154,7 +184,7 @@ func buildDaySummary(timers []timerTime, tl todayLog) []projectTotal {
 		if p, ok := byName[name]; ok {
 			return p
 		}
-		p := &projectTotal{Name: name}
+		p := &projectTotal{Name: name, Color: len(ordered)}
 		byName[name] = p
 		ordered = append(ordered, p)
 		return p
@@ -172,7 +202,7 @@ func buildDaySummary(timers []timerTime, tl todayLog) []projectTotal {
 	}
 	var out []projectTotal
 	for _, p := range ordered {
-		if p.Entries > 0 || p.Unlogged >= time.Minute {
+		if p.Total() > 0 || p.Entries > 0 {
 			out = append(out, *p)
 		}
 	}
@@ -252,8 +282,13 @@ func rowText(p projectTotal) string {
 func parseTargetHours(s string) (time.Duration, error) {
 	s = strings.ReplaceAll(strings.TrimSpace(s), ",", ".")
 	h, err := strconv.ParseFloat(s, 64)
-	if err != nil || h <= 0 || h > 24 {
+	// Written as !(in range) so NaN, which fails every comparison, is rejected.
+	if err != nil || !(h > 0 && h <= 24) {
 		return 0, fmt.Errorf("enter hours between 0 and 24, e.g. 8 or 7.5 (got %q)", s)
 	}
-	return time.Duration(h * float64(time.Hour)).Round(time.Minute), nil
+	d := time.Duration(h * float64(time.Hour)).Round(time.Minute)
+	if d < time.Minute {
+		return 0, fmt.Errorf("enter at least one minute (got %q)", s)
+	}
+	return d, nil
 }
