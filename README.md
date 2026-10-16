@@ -48,10 +48,11 @@ the menu bar.
 
 The dropdown menu opens with a **Today** summary: total hours against your
 daily target, a bar split by project (solid = logged, lighter = still on a
-timer), and one row per project with its entry count. It sums today's rows
-from every machine's log in the iCloud `tiktimer` folder (or your custom
-`logPath`), plus whatever is on your timers now. Click any of it to reveal the
-log in Finder.
+timer), and one row per project with its entry count. A day runs from 4 am
+to 4 am, so late-night work counts toward the evening it belongs to. It sums
+today's rows from every machine's log in the iCloud `tiktimer` folder (or your
+custom `logPath`), plus whatever is on your timers now. Click any of it to
+reveal the log in Finder.
 
 The dropdown menu also lets you:
 

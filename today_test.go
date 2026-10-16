@@ -28,20 +28,20 @@ func TestReadTodayLogged(t *testing.T) {
 	// rows, which a default csv.Reader would reject.
 	mixed := filepath.Join(dir, "iMac.csv")
 	writeFile(t, mixed, "timestamp,name,duration,hours,note\n"+
-		"2026-10-13T23:59:59-04:00,Acme,05:00:00,5.00,yesterday\n"+
-		"2026-10-14T00:00:00-04:00,Acme,01:00:00,1.00,midnight counts\n"+
+		"2026-10-14T03:59:59-04:00,Acme,05:00:00,5.00,before 4am is yesterday\n"+
+		"2026-10-14T04:00:00-04:00,Acme,01:00:00,1.00,4am counts\n"+
 		"2026-10-14T09:00:00-04:00,Acme,01:30:00,1.50,\"note, with comma\nand newline\",01:29:10\n"+
 		"2026-10-14T10:00:00-04:00,Globex,00:45:00,0.75,old-format row\n"+
 		"not-a-time,Acme,01:00:00,1.00,bad\n"+
 		"2026-10-14T11:00:00-04:00,Acme,garbage,1.00,bad duration\n")
 
-	// Another machine's file, written in UTC: 03:30Z is 23:30 the previous
-	// local day, 14:00Z is 10:00 local today.
+	// Another machine's file, written in UTC: 07:30Z is 03:30 local, before
+	// the 4 am day start; 14:00Z is 10:00 local today.
 	other := filepath.Join(dir, "MacBook.csv")
 	writeFile(t, other, "timestamp,name,duration,hours,note,tracked\n"+
-		"2026-10-14T03:30:00Z,Initech,02:00:00,2.00,,02:00:00\n"+
+		"2026-10-14T07:30:00Z,Initech,02:00:00,2.00,,02:00:00\n"+
 		"2026-10-14T14:00:00Z, Globex ,00:15:00,0.25,,00:15:00\n"+
-		"2026-10-15T00:00:00-04:00,Acme,03:00:00,3.00,tomorrow,03:00:00\n")
+		"2026-10-15T04:00:00-04:00,Acme,03:00:00,3.00,tomorrow,03:00:00\n")
 
 	tl := readTodayLogged([]string{mixed, other, filepath.Join(dir, "missing.csv")}, now)
 
@@ -58,7 +58,7 @@ func TestReadTodayLogged(t *testing.T) {
 		t.Errorf("Globex logged = %v, want 1h (name trimmed, both files)", got)
 	}
 	if _, ok := tl.logged["Initech"]; ok {
-		t.Errorf("Initech is from the previous local day and should be excluded")
+		t.Errorf("Initech is before the 4 am day start and should be excluded")
 	}
 	if strings.Join(tl.order, ",") != "Acme,Globex" {
 		t.Errorf("order = %v, want [Acme Globex]", tl.order)
@@ -85,18 +85,40 @@ func TestReadTodayLoggedMissingIsZero(t *testing.T) {
 	}
 }
 
+func TestDayBoundsStartsAt4am(t *testing.T) {
+	loc := time.FixedZone("EDT", -4*3600)
+	cases := []struct {
+		name string
+		now  time.Time
+		want time.Time
+	}{
+		{"afternoon", time.Date(2026, 10, 14, 15, 0, 0, 0, loc), time.Date(2026, 10, 14, 4, 0, 0, 0, loc)},
+		{"exactly 4am", time.Date(2026, 10, 14, 4, 0, 0, 0, loc), time.Date(2026, 10, 14, 4, 0, 0, 0, loc)},
+		{"late night belongs to previous day", time.Date(2026, 10, 15, 1, 30, 0, 0, loc), time.Date(2026, 10, 14, 4, 0, 0, 0, loc)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			start, end := dayBounds(c.now)
+			if !start.Equal(c.want) || !end.Equal(c.want.AddDate(0, 0, 1)) {
+				t.Errorf("got [%v, %v), want start %v", start, end, c.want)
+			}
+		})
+	}
+}
+
 func TestDayBoundsDST(t *testing.T) {
 	loc, err := time.LoadLocation("America/Toronto")
 	if err != nil {
 		t.Skip("tzdata unavailable")
 	}
-	// 2026-11-01 is the fall-back day: 25 hours long.
-	start, end := dayBounds(time.Date(2026, 11, 1, 12, 0, 0, 0, loc))
+	// Clocks fall back at 2 am on 2026-11-01, so at 3 am that morning the work
+	// day is 4 am Oct 31 to 4 am Nov 1, which is 25 hours long.
+	start, end := dayBounds(time.Date(2026, 11, 1, 3, 0, 0, 0, loc))
 	if got := end.Sub(start); got != 25*time.Hour {
 		t.Errorf("fall-back day length = %v, want 25h", got)
 	}
-	if end.Hour() != 0 || end.Day() != 2 {
-		t.Errorf("end = %v, want local midnight Nov 2", end)
+	if end.Hour() != dayStartHour || end.Day() != 1 || start.Day() != 31 {
+		t.Errorf("got [%v, %v), want 4 am Oct 31 to 4 am Nov 1", start, end)
 	}
 }
 

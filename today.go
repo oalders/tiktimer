@@ -63,15 +63,24 @@ type todayLog struct {
 	dataless   bool
 }
 
-// dayBounds returns the half-open local-day window [start, end) containing
-// now. AddDate (not +24h) keeps DST days correct.
+// dayStartHour is when a work day begins. Starting at 4 am rather than
+// midnight keeps a late-night session on the day it belongs to: work logged
+// at 1 am still counts toward the previous evening.
+const dayStartHour = 4
+
+// dayBounds returns the half-open work-day window [start, end) containing
+// now: from dayStartHour local time to the same time the next day. AddDate
+// (not +24h) keeps DST days correct.
 func dayBounds(now time.Time) (time.Time, time.Time) {
 	y, m, d := now.Date()
-	start := time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+	start := time.Date(y, m, d, dayStartHour, 0, 0, 0, now.Location())
+	if now.Before(start) {
+		start = start.AddDate(0, 0, -1)
+	}
 	return start, start.AddDate(0, 0, 1)
 }
 
-// readTodayLogged sums each project's logged duration for now's local day
+// readTodayLogged sums each project's logged duration for now's work day
 // across paths. Missing files count as zero. Rows are read by position with a
 // variable field count, because files predating the tracked column have a
 // 5-column header followed by 6-column rows. Malformed rows are skipped.

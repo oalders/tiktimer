@@ -198,3 +198,7 @@ rest of the menu as today.
 - **Sub-minute timer time is hidden:** a row mentions unlogged time only at
   ≥ 1m, and a project with no entries and under a minute on its timer is
   left out. It still counts toward the headline total and the bar.
+- **The day starts at 4 am, not midnight:** the window is
+  `[04:00 local, 04:00 next day)` (`dayStartHour`), so late-night work logged
+  after midnight still counts toward the evening it belongs to. This replaces
+  the "work logged after midnight counts toward the new day" tradeoff above.
