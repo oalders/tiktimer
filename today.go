@@ -87,13 +87,19 @@ func workedBeforeToday(lastRun, now time.Time) bool {
 	return !lastRun.IsZero() && lastRun.Before(start)
 }
 
-// logTimestamp is the time a Log & Reset row is dated: now, or when the timer
-// last ran if all its time is from an earlier work day, so clearing out
-// yesterday's timers in the morning files that work under yesterday. A timer
-// that ran on both days is dated now.
-func logTimestamp(lastRun, now time.Time) time.Time {
-	if workedBeforeToday(lastRun, now) {
+// logTimestamp is the time a Log & Reset row is dated: when the timer last
+// ran if all its time is from an earlier work day (so clearing out
+// yesterday's timers in the morning files that work under yesterday), the
+// previous work day if the user chose Log & Reset as Yesterday, otherwise
+// now. The day is judged at opened, when the dialog appeared, so the dialog's
+// hint and the row agree even if it stays open past dayStartHour. A timer that
+// ran on both days is dated now.
+func logTimestamp(lastRun, opened, now time.Time, asYesterday bool) time.Time {
+	switch {
+	case workedBeforeToday(lastRun, opened):
 		return lastRun
+	case asYesterday:
+		return yesterdayTimestamp(lastRun, opened)
 	}
 	return now
 }

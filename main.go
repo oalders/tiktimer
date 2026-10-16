@@ -106,7 +106,10 @@ func (a *App) logAndReset(target *Timer) {
 	info := "Adjust the time if needed, and note how it was spent."
 	buttons := []string{"Log & Reset"}
 	yesterdayBtn := -1
-	if opened := time.Now(); workedBeforeToday(snap.lastRun, opened) {
+	// The dating is decided against when the dialog opened, so the hint shown
+	// and the date written agree even if the dialog stays open past 4 am.
+	opened := time.Now()
+	if workedBeforeToday(snap.lastRun, opened) {
 		info += "\n\n" + backdatedNote(snap.lastRun)
 	} else {
 		yesterdayBtn = len(buttons)
@@ -169,9 +172,11 @@ func (a *App) logAndReset(target *Timer) {
 
 	durStr, hoursStr := formatEntryFields(logDur)
 	now := time.Now()
-	when := logTimestamp(snap.lastRun, now)
-	if asYesterday {
-		when = yesterdayTimestamp(snap.lastRun, now)
+	when := logTimestamp(snap.lastRun, opened, now, asYesterday)
+	// Log under the timer's current name, in case it was renamed while the
+	// dialog was open.
+	if name, _, ok := a.elapsedOf(snap.ptr); ok {
+		snap.name = name
 	}
 	timestamp := when.Format(time.RFC3339)
 	logPath := resolveLogPath(a.logPath)

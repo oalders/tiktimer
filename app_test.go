@@ -210,9 +210,13 @@ func TestSnapshotTimer(t *testing.T) {
 		a.timers[0].Accumulated = 10 * time.Second
 		a.running = true
 		a.lastTick = time.Now().Add(-2 * time.Second)
+		before := time.Now()
 		snap, _ := a.snapshotTimer(a.timers[0])
-		if snap.elapsed < 12*time.Second {
-			t.Errorf("elapsed: got %v want >= 12s", snap.elapsed)
+		if snap.elapsed < 12*time.Second || snap.elapsed > 13*time.Second {
+			t.Errorf("elapsed: got %v want about 12s", snap.elapsed)
+		}
+		if snap.lastRun.Before(before) {
+			t.Errorf("lastRun: got %v, want now since it is running", snap.lastRun)
 		}
 	})
 	t.Run("inactive timer ignores the running timer's ticks", func(t *testing.T) {
@@ -264,6 +268,9 @@ func TestResetLogged(t *testing.T) {
 		}
 		if !a.running {
 			t.Error("timer stopped")
+		}
+		if !a.timers[0].LastRun.After(snap.lastRun.Add(-time.Second)) {
+			t.Errorf("LastRun = %v, want it moved to now by the flush", a.timers[0].LastRun)
 		}
 	})
 	t.Run("switching timers during the dialog still resets", func(t *testing.T) {

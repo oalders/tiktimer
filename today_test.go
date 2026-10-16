@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"image"
 	"image/png"
 	"os"
@@ -439,7 +440,7 @@ func TestLogTimestampBackdatesLeftovers(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := logTimestamp(c.lastRun, now); !got.Equal(c.want) {
+			if got := logTimestamp(c.lastRun, now, now, false); !got.Equal(c.want) {
 				t.Errorf("got %v, want %v", got, c.want)
 			}
 		})
@@ -514,7 +515,11 @@ func TestLastRunRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(string(raw), "lastRun") != 1 {
+	var saved struct{ Timers []map[string]any }
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Timers) != 2 || saved.Timers[0]["lastRun"] == nil || saved.Timers[1]["lastRun"] != nil {
 		t.Errorf("want lastRun saved only for the timer that ran:\n%s", raw)
 	}
 	loaded := newApp()
@@ -554,8 +559,24 @@ func TestYesterdayTimestamp(t *testing.T) {
 
 func TestYesterdayHint(t *testing.T) {
 	when := time.Date(2026, 10, 15, 23, 59, 0, 0, time.UTC)
-	want := "Log & Reset dates it now; Log & Reset as Yesterday dates it Thu Oct 15 23:59."
-	if got := yesterdayHint(when); got != want {
-		t.Errorf("got %q, want %q", got, want)
+	got := yesterdayHint(when)
+	if !strings.Contains(got, yesterdayButton) || !strings.Contains(got, "Oct 15 23:59") {
+		t.Errorf("hint %q should name the button and the date it gives", got)
+	}
+}
+
+func TestLogTimestampJudgesDayWhenDialogOpened(t *testing.T) {
+	loc := time.FixedZone("EDT", -4*3600)
+	lastRun := time.Date(2026, 10, 16, 1, 0, 0, 0, loc) // part of Oct 15's work day
+	opened := time.Date(2026, 10, 16, 3, 58, 0, 0, loc)
+	now := time.Date(2026, 10, 16, 4, 2, 0, 0, loc) // dialog closed after 4 am
+	if got := logTimestamp(lastRun, opened, now, false); !got.Equal(now) {
+		t.Errorf("got %v; at %v the time was today's, so it should be dated now", got, opened)
+	}
+	if got := logTimestamp(lastRun, opened, now, true); !got.Equal(time.Date(2026, 10, 14, 23, 59, 0, 0, loc)) {
+		t.Errorf("as yesterday: got %v, want the work day before the one open at %v", got, opened)
+	}
+	if got := logTimestamp(time.Date(2026, 10, 15, 20, 0, 0, 0, loc), now, now, true); !got.Equal(time.Date(2026, 10, 15, 20, 0, 0, 0, loc)) {
+		t.Errorf("leftover with as-yesterday: got %v, want when it last ran", got)
 	}
 }

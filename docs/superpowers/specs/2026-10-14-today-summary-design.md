@@ -216,3 +216,10 @@ rest of the menu as today.
   an earlier day, dates the row at `lastRun` if that is before today's work
   day, otherwise 23:59 on the previous work day. It covers a timer started by
   accident for a few seconds this morning.
+- **Dialog edge cases:** the dating is judged at the moment the dialog opened,
+  so its hint and the row agree if it stays open past 4 am. The row uses the
+  timer's name at write time, in case it was renamed mid-dialog. Two Log &
+  Reset dialogs cannot be open at once (menuet refuses a second Alert). A
+  timer restarted this morning while still holding yesterday's leftover
+  counts and logs entirely as today (use Log & Reset as Yesterday, or log the
+  leftover before starting it).
