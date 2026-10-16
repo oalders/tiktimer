@@ -46,11 +46,19 @@ the menu bar.
 | Click | Start/stop the active timer |
 | Option+click | Open the dropdown menu |
 
-The dropdown menu lets you:
+The dropdown menu opens with a **Today** summary: total hours against your
+daily target, a bar split by project (solid = logged, lighter = still on a
+timer), and one row per project with its entry count. It sums today's rows
+from every machine's log in the iCloud `tiktimer` folder (or your custom
+`logPath`), plus whatever is on your timers now. Click any of it to reveal the
+log in Finder.
+
+The dropdown menu also lets you:
 
 - Switch between timers (click a timer name)
 - Reset the active timer
 - Add or remove timers
+- Set the daily target (default 8h)
 
 ## Development
 

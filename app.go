@@ -34,8 +34,10 @@ type App struct {
 	lastTick time.Time
 	display  DisplayMode
 	logPath  string // CSV destination; empty means the iCloud default
-	home     string // base dir for the state file; empty means the OS home dir
-	saveWG   sync.WaitGroup
+	// dailyTarget is the Today summary's goal; 0 means defaultDailyTarget.
+	dailyTarget time.Duration
+	home        string // base dir for the state file; empty means the OS home dir
+	saveWG      sync.WaitGroup
 	// autoPaused records that pauseForSleep stopped the timer, so resumeAfterWake
 	// knows to restart it (and leaves a user-stopped timer alone).
 	autoPaused bool
@@ -46,6 +48,8 @@ type saveData struct {
 	Active  int         `json:"active"`
 	Display DisplayMode `json:"display,omitempty"`
 	LogPath string      `json:"logPath,omitempty"`
+	// DailyTargetHours is the Today summary's goal in hours; 0 means 8.
+	DailyTargetHours float64 `json:"dailyTargetHours,omitempty"`
 }
 
 func newApp() *App {
@@ -62,7 +66,7 @@ func (a *App) savePath() string {
 
 func (a *App) save() {
 	a.mu.Lock()
-	data := saveData{Active: a.active, Display: a.display, LogPath: a.logPath}
+	data := saveData{Active: a.active, Display: a.display, LogPath: a.logPath, DailyTargetHours: a.dailyTarget.Hours()}
 	for _, t := range a.timers {
 		data.Timers = append(data.Timers, *t)
 	}
@@ -104,6 +108,7 @@ func (a *App) load() {
 		a.display = data.Display
 	}
 	a.logPath = data.LogPath
+	a.dailyTarget = time.Duration(data.DailyTargetHours * float64(time.Hour)).Round(time.Minute)
 }
 
 func formatDuration(d time.Duration, showTenths bool) string {
@@ -396,6 +401,47 @@ func (a *App) setElapsed(target *Timer, d time.Duration) {
 	a.mu.Unlock()
 
 	a.saveAsync()
+}
+
+// targetLocked returns the daily target, applying the default. Callers hold
+// a.mu.
+func (a *App) targetLocked() time.Duration {
+	if a.dailyTarget <= 0 {
+		return defaultDailyTarget
+	}
+	return a.dailyTarget
+}
+
+// dailyTargetValue returns the daily target, applying the default.
+func (a *App) dailyTargetValue() time.Duration {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.targetLocked()
+}
+
+// setDailyTarget stores a new daily target and persists it.
+func (a *App) setDailyTarget(d time.Duration) {
+	a.mu.Lock()
+	a.dailyTarget = d
+	a.mu.Unlock()
+	a.saveAsync()
+}
+
+// todaySnapshot copies what the Today summary needs from app state, so the
+// log files can be read without holding the mutex: every timer's unlogged
+// time (including in-flight time for the running timer), the log path, and
+// the daily target.
+func (a *App) todaySnapshot() (timers []timerTime, logPath string, target time.Duration) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for i, t := range a.timers {
+		acc := t.Accumulated
+		if i == a.active && a.running {
+			acc += time.Since(a.lastTick)
+		}
+		timers = append(timers, timerTime{Name: t.Name, Elapsed: acc})
+	}
+	return timers, a.logPath, a.targetLocked()
 }
 
 // logDirReady reports an error when the log destination is not usable. For the

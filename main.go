@@ -5,7 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -163,12 +165,17 @@ func (a *App) logAndReset() {
 		return
 	}
 
-	a.resetIfActive(snap)
+	msg := logSuccessMessage(durStr, hoursStr, snap.name, logPath)
+	if !a.resetIfActive(snap) {
+		// Another timer became active while the dialog was open. Until this
+		// one is zeroed, the Today summary counts its time twice.
+		msg += fmt.Sprintf("\n\n%q was not reset because another timer became active. Use Set Time to zero it.", snap.name)
+	}
 	a.saveAsync()
 
 	menuet.App().Alert(menuet.Alert{
 		MessageText:     "Logged",
-		InformativeText: logSuccessMessage(durStr, hoursStr, snap.name, logPath),
+		InformativeText: msg,
 		Buttons:         []string{"OK"},
 	})
 }
@@ -224,11 +231,82 @@ func (a *App) setTimerTime(target *Timer) {
 	a.setElapsed(target, parsed)
 }
 
+// todayItems builds the Today summary at the top of the menu: a headline,
+// the stacked day bar, and one row per project with a legend dot. Log files
+// are read without holding the mutex. Every item reveals the log in Finder
+// when clicked, which also keeps AppKit from greying them out as disabled.
+func (a *App) todayItems() []menuet.MenuItem {
+	timers, logPath, target := a.todaySnapshot()
+	tl := readTodayLogged(logFilesToRead(logPath), time.Now())
+	projects := buildDaySummary(timers, tl)
+
+	var total time.Duration
+	for _, p := range projects {
+		total += p.Total()
+	}
+	reveal := func() { revealLog(logPath) }
+
+	items := []menuet.MenuItem{
+		{Text: headlineText(total, target, tl), FontWeight: menuet.WeightBold, Clicked: reveal},
+		{Image: renderDayBar(projects, target), Clicked: reveal},
+	}
+	for i, p := range projects {
+		items = append(items, menuet.MenuItem{
+			Text:    rowText(p),
+			Image:   renderSwatch(i),
+			Clicked: reveal,
+		})
+	}
+	return items
+}
+
+// revealLog shows the log in Finder: the file itself for a custom logPath,
+// otherwise the shared iCloud folder holding every machine's CSV.
+func revealLog(logPath string) {
+	if logPath != "" {
+		if _, err := os.Stat(logPath); err == nil {
+			go exec.Command("open", "-R", logPath).Run()
+			return
+		}
+		go exec.Command("open", filepath.Dir(logPath)).Run()
+		return
+	}
+	go exec.Command("open", filepath.Dir(defaultLogPath())).Run()
+}
+
+// setDailyTargetPrompt asks for the Today summary's daily target in hours.
+func (a *App) setDailyTargetPrompt() {
+	current := a.dailyTargetValue()
+	response := menuet.App().Alert(menuet.Alert{
+		MessageText:     "Daily Target",
+		InformativeText: "Hours you aim to work per day, across all timers (e.g. 8 or 7.5):",
+		Buttons:         []string{"Set", "Cancel"},
+		Inputs:          []string{"Hours"},
+		InputValues:     []string{strconv.FormatFloat(current.Hours(), 'f', -1, 64)},
+	})
+	if response.Button != 0 || len(response.Inputs) == 0 {
+		return
+	}
+	d, err := parseTargetHours(response.Inputs[0])
+	if err != nil {
+		menuet.App().Alert(menuet.Alert{
+			MessageText:     "Invalid target",
+			InformativeText: fmt.Sprintf("%v\n\nNothing was changed.", err),
+			Buttons:         []string{"OK"},
+		})
+		return
+	}
+	a.setDailyTarget(d)
+}
+
 func (a *App) menuItems() []menuet.MenuItem {
+	// Built before locking: it snapshots state under the mutex itself and then
+	// reads the log files unlocked.
+	items := a.todayItems()
+	items = append(items, menuet.MenuItem{Type: menuet.Separator})
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
-
-	var items []menuet.MenuItem
 
 	for i, t := range a.timers {
 		idx := i
@@ -301,6 +379,13 @@ func (a *App) menuItems() []menuet.MenuItem {
 		State: a.display == DisplayOdometer,
 		Clicked: func() {
 			a.toggleDisplay()
+		},
+	})
+
+	items = append(items, menuet.MenuItem{
+		Text: fmt.Sprintf("Daily Target (%s)…", formatCompact(a.targetLocked())),
+		Clicked: func() {
+			a.setDailyTargetPrompt()
 		},
 	})
 
