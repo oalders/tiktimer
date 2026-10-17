@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -225,5 +226,44 @@ func TestRoundUpLabel(t *testing.T) {
 	}
 	if got := roundUpLabel(15 * time.Minute); got != "Round Up to 15m" {
 		t.Errorf("15m: got %q", got)
+	}
+}
+
+func TestFormulaSafe(t *testing.T) {
+	for in, want := range map[string]string{
+		"=HYPERLINK(\"x\")": "'=HYPERLINK(\"x\")",
+		"+1":                "'+1",
+		"-fixed bug":        "'-fixed bug",
+		"@SUM(A1)":          "'@SUM(A1)",
+		"\tx":               "'\tx",
+		"plain note":        "plain note",
+		"":                  "",
+		"'quoted":           "'quoted",
+	} {
+		got := formulaSafe(in)
+		if got != want {
+			t.Errorf("formulaSafe(%q) = %q, want %q", in, got, want)
+		}
+		if back := unformulaSafe(got); back != in {
+			t.Errorf("unformulaSafe(%q) = %q, want %q", got, back, in)
+		}
+	}
+}
+
+func TestAppendLogRowGuardsFormulas(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "iMac.csv")
+	if err := appendLogRow(path, "2026-10-16T09:00:00-04:00", "-Acme", "01:00:00", "1.00", "=1+1", "01:00:00"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), ",'-Acme,") || !strings.Contains(string(raw), ",'=1+1,") {
+		t.Errorf("name and note should be guarded:\n%s", raw)
+	}
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.FixedZone("EDT", -4*3600))
+	if tl := readTodayLogged([]string{path}, now); tl.logged["-Acme"] != time.Hour {
+		t.Errorf("the summary should read the guarded name back as %q: %+v", "-Acme", tl.logged)
 	}
 }

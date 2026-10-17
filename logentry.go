@@ -161,6 +161,29 @@ func parseHMS(s string) (time.Duration, error) {
 	return time.Duration(h)*time.Hour + time.Duration(m)*time.Minute + time.Duration(sec)*time.Second, nil
 }
 
+// formulaChars are the leading characters a spreadsheet may evaluate as a
+// formula when it opens the CSV.
+const formulaChars = "=+-@\t\r"
+
+// formulaSafe keeps a free-text field from being run as a spreadsheet formula
+// (CSV injection) by prefixing an apostrophe when it starts with one of
+// formulaChars. encoding/csv already handles quoting; this covers content.
+func formulaSafe(s string) string {
+	if s != "" && strings.ContainsRune(formulaChars, rune(s[0])) {
+		return "'" + s
+	}
+	return s
+}
+
+// unformulaSafe reverses formulaSafe, so a timer named "-x" still matches its
+// logged rows.
+func unformulaSafe(s string) string {
+	if len(s) > 1 && s[0] == '\'' && strings.ContainsRune(formulaChars, rune(s[1])) {
+		return s[1:]
+	}
+	return s
+}
+
 // appendLogRow appends one time-entry row to the CSV at path, creating the
 // parent directory and a header row when needed. It returns the first error
 // encountered while writing, flushing, or closing the file so callers can
@@ -189,7 +212,7 @@ func appendLogRow(path, timestamp, name, duration, hours, note, tracked string) 
 			return err
 		}
 	}
-	if err := w.Write([]string{timestamp, name, duration, hours, note, tracked}); err != nil {
+	if err := w.Write([]string{timestamp, formulaSafe(name), duration, hours, formulaSafe(note), tracked}); err != nil {
 		f.Close()
 		return err
 	}

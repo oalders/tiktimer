@@ -201,7 +201,7 @@ func (tl *todayLog) readFile(path string, start, end time.Time, loc *time.Locati
 		if err != nil {
 			continue
 		}
-		name := strings.TrimSpace(rec[1])
+		name := strings.TrimSpace(unformulaSafe(rec[1]))
 		if _, seen := tl.counts[name]; !seen {
 			tl.order = append(tl.order, name)
 		}

@@ -66,7 +66,9 @@ The dropdown menu also lets you:
 - Switch between timers (click a timer name)
 - Log & Reset any timer (pick it from the submenu): write a CSV row with a
   note, then take that time off the timer, without pausing or switching away
-  from the timer that's running
+  from the timer that's running. A name or note starting with `=`, `+`, `-`
+  or `@` is written with a leading `'` so a spreadsheet won't run it as a
+  formula
 - Add or remove timers
 - Set the daily target (default 8h)
 
