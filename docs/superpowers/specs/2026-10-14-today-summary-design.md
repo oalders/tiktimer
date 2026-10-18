@@ -205,9 +205,9 @@ rest of the menu as today.
   stopped timer whose `lastRun` is before the current work day contributes
   nothing to Today, and Log & Reset dates its row at `lastRun` instead of now,
   so the CSV and the spreadsheet file it under the day it was worked. The
-  "Logged" notification says when a row was backdated. A timer that ran on both days
-  is dated now (accepted). Timers saved before `lastRun` existed count as
-  today.
+  "Logged" notification says when a row was backdated. A timer that ran on
+  both days is dated now (accepted). Timers saved before `lastRun` existed
+  count as today.
 - **Log & Reset works on any timer:** it is a submenu of all timers (those
   under a second are disabled), so logging one never pauses or switches the
   running timer. The reset subtracts the logged snapshot from the timer
