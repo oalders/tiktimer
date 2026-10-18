@@ -76,7 +76,8 @@ Start/Stop item and above the timer list:
 ### Clicking
 The summary items (headline, bar, rows) are information only: clicking one
 just closes the menu. They still have an empty action, because without one
-AppKit draws them disabled and the summary is hard to read (#18).
+AppKit draws them disabled and the summary is hard to read (#18). The cost,
+accepted, is that they highlight on hover like any enabled item.
 **Show Log in Finder**, in the Settings submenu, reveals the log (`open -R
 <file>` for a custom `logPath`, `open <dir>` for the default iCloud folder).
 An earlier version made every summary item reveal the log so AppKit would not
