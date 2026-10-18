@@ -24,7 +24,7 @@ goes to a spreadsheet later. This feature only gives a quick in-app view.
     don't.
   - An item with no `Clicked` and no children is disabled. AppKit greys its
     text and dims its image. The summary items are left this way on purpose
-    (see below).
+    (see below), so the bar and legend dots render dimmed too.
   - `Children` (i.e. `menuItems`) runs only when the menu opens, on the main
     thread, so the summary is computed fresh at each open.
 
@@ -39,6 +39,7 @@ Start/Stop item and above the timer list:
   ● Acme        4h 50m · 5 logged + 23m on timer
   ● Globex      1h 48m · 2 logged
   ● Initech     0h 30m · 1 logged
+  Show Log in Finder                       ← the only clickable item
   ─────────────────────────────────
   Acme  0:23:10   ✓
   ...
