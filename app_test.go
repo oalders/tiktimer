@@ -134,7 +134,7 @@ func TestMenuItemsSettingsSubmenu(t *testing.T) {
 	for _, c := range last.Children() {
 		texts = append(texts, c.Text)
 	}
-	want := []string{"Odometer Display", "Daily Target (8h)…", "Copy Log File Path"}
+	want := []string{"Odometer Display", "Daily Target (8h)…", "Copy Log File Path", "Show Log in Finder"}
 	if !slices.Equal(texts, want) {
 		t.Errorf("Settings children %q want %q", texts, want)
 	}

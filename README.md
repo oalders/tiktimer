@@ -55,8 +55,7 @@ project (solid = logged, lighter = still on a timer), and one row per project
 with its entry count. A day runs from 4 am to 4 am, so late-night work counts
 toward the evening it belongs to. It sums today's rows from every machine's
 log in the iCloud `tiktimer` folder (or your custom `logPath`), plus whatever
-is on your timers now. **Show Log in Finder**, below the summary, reveals
-the log.
+is on your timers now.
 
 Time left on a timer from an earlier day doesn't count toward today. When you
 Log & Reset such a timer, the row is dated when the timer last ran, so
@@ -75,7 +74,7 @@ The dropdown menu also lets you:
   a leading `'` so a spreadsheet won't run it as a formula
 - Add timers
 - Change settings from the **Settings** submenu: Odometer Display, the
-  Daily Target (default 8h), and Copy Log File Path
+  Daily Target (default 8h), Copy Log File Path, and Show Log in Finder
 
 ## Development
 

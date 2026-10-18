@@ -587,16 +587,13 @@ func TestTodayItemsAreReadOnly(t *testing.T) {
 	a.timers[0].Accumulated = time.Hour               // enough for a project row
 
 	items := a.todayItems()
-	// Headline, bar, one project row, then the Finder item.
-	if len(items) != 4 {
-		t.Fatalf("got %d items want 4: %+v", len(items), items)
+	// Headline, bar and one project row.
+	if len(items) != 3 {
+		t.Fatalf("got %d items want 3: %+v", len(items), items)
 	}
-	for _, it := range items[:len(items)-1] {
+	for _, it := range items {
 		if it.Clicked != nil || it.Children != nil {
 			t.Errorf("summary item %q is enabled", it.Text)
 		}
-	}
-	if last := items[len(items)-1]; last.Text != "Show Log in Finder" || last.Clicked == nil {
-		t.Errorf("last item %q (clickable %v) want a clickable Show Log in Finder", last.Text, last.Clicked != nil)
 	}
 }
