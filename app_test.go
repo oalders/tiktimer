@@ -143,6 +143,24 @@ func TestMenuItemsSettingsSubmenu(t *testing.T) {
 			t.Errorf("%q is still a top-level item", it.Text)
 		}
 	}
+	for _, c := range last.Children() {
+		if c.Clicked == nil {
+			t.Errorf("%q is not clickable", c.Text)
+		}
+	}
+
+	odometer := func() menuet.MenuItem {
+		items := a.menuItems()
+		return items[len(items)-1].Children()[0]
+	}
+	a.display = DisplayText
+	odometer().Clicked()
+	if a.display != DisplayOdometer {
+		t.Fatalf("display %q after clicking Odometer Display want %q", a.display, DisplayOdometer)
+	}
+	if !odometer().State {
+		t.Error("Odometer Display is unchecked in odometer mode")
+	}
 }
 
 func TestMenuItemsTimerSubmenus(t *testing.T) {
