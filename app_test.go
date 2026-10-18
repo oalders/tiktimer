@@ -119,6 +119,100 @@ func TestMenuItemsToggle(t *testing.T) {
 	}
 }
 
+func TestMenuItemsTimerSubmenus(t *testing.T) {
+	newMenuApp := func(t *testing.T) *App {
+		a := newTestApp(t, 2)
+		a.logPath = filepath.Join(t.TempDir(), "log.csv") // keep off the real iCloud log
+		a.timers[0].Name = "Acme"
+		a.timers[1].Name = "Beta"
+		a.active = 0
+		return a
+	}
+	row := func(t *testing.T, items []menuet.MenuItem, name string) menuet.MenuItem {
+		t.Helper()
+		for _, it := range items {
+			if strings.HasPrefix(it.Text, name+"  ") {
+				return it
+			}
+		}
+		t.Fatalf("no timer row for %q", name)
+		return menuet.MenuItem{}
+	}
+	child := func(t *testing.T, it menuet.MenuItem, text string) menuet.MenuItem {
+		t.Helper()
+		for _, c := range it.Children() {
+			if c.Text == text {
+				return c
+			}
+		}
+		t.Fatalf("row %q has no child %q", it.Text, text)
+		return menuet.MenuItem{}
+	}
+
+	t.Run("each row is a submenu of timer actions", func(t *testing.T) {
+		items := newMenuApp(t).menuItems()
+		for name, active := range map[string]bool{"Acme": true, "Beta": false} {
+			it := row(t, items, name)
+			if it.Children == nil || it.Clicked != nil {
+				t.Fatalf("%s: Children set=%v Clicked set=%v want a submenu only", name, it.Children != nil, it.Clicked != nil)
+			}
+			if it.State != active {
+				t.Errorf("%s: State %v want %v", name, it.State, active)
+			}
+			var texts []string
+			for _, c := range it.Children() {
+				texts = append(texts, c.Text)
+			}
+			want := []string{"Switch To", "Rename…", "Set Time…", "Log & Reset…", "Pause on Sleep", "", "Remove…"}
+			if !slices.Equal(texts, want) {
+				t.Errorf("%s: children %q want %q", name, texts, want)
+			}
+		}
+	})
+
+	t.Run("Switch To is disabled for the active timer", func(t *testing.T) {
+		a := newMenuApp(t)
+		items := a.menuItems()
+		if child(t, row(t, items, "Acme"), "Switch To").Clicked != nil {
+			t.Error("Switch To is clickable on the active timer")
+		}
+		sw := child(t, row(t, items, "Beta"), "Switch To")
+		if sw.Clicked == nil {
+			t.Fatal("Switch To is disabled on an inactive timer")
+		}
+		sw.Clicked()
+		if a.active != 1 {
+			t.Errorf("active %d after Switch To want 1", a.active)
+		}
+	})
+
+	for _, tc := range []struct {
+		acc     time.Duration
+		enabled bool
+	}{
+		{999 * time.Millisecond, false},
+		{time.Second, true},
+	} {
+		t.Run(fmt.Sprintf("Log & Reset with %v", tc.acc), func(t *testing.T) {
+			a := newMenuApp(t)
+			a.timers[1].Accumulated = tc.acc
+			got := child(t, row(t, a.menuItems(), "Beta"), "Log & Reset…").Clicked != nil
+			if got != tc.enabled {
+				t.Errorf("enabled %v want %v", got, tc.enabled)
+			}
+		})
+	}
+
+	t.Run("old top-level timer menus are gone", func(t *testing.T) {
+		for _, it := range newMenuApp(t).menuItems() {
+			switch it.Text {
+			case "Log & Reset", "Set Time", "Pause on Sleep", "Remove Timer", "Rename Current Timer…":
+				t.Errorf("unexpected top-level item %q", it.Text)
+			}
+		}
+	})
+}
+
 func TestToggleActive(t *testing.T) {
 	t.Run("starts and stops the active timer", func(t *testing.T) {
 		a := newTestApp(t, 1)

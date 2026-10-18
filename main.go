@@ -385,65 +385,56 @@ func (a *App) menuItems() []menuet.MenuItem {
 
 	for i, t := range a.timers {
 		idx := i
+		tp := t
+		name := t.Name
 		acc := t.Accumulated
 		if i == a.active && a.running {
 			acc += time.Since(a.lastTick)
 		}
 
-		items = append(items, menuet.MenuItem{
-			Text:  fmt.Sprintf("%s  %s", t.Name, formatDuration(acc, false)),
-			State: i == a.active,
-			Clicked: func() {
-				a.switchTo(idx)
+		// Switching to the active timer would toggle it; the bold top item does that.
+		switchItem := menuet.MenuItem{Text: "Switch To"}
+		if i != a.active {
+			switchItem.Clicked = func() { a.switchTo(idx) }
+		}
+		// Log & Reset never pauses or switches away from the timer in progress.
+		// A timer with nothing to log is left disabled.
+		logItem := menuet.MenuItem{Text: "Log & Reset…"}
+		if acc >= time.Second {
+			logItem.Clicked = func() { a.logAndReset(tp) }
+		}
+		children := []menuet.MenuItem{
+			switchItem,
+			{
+				Text: "Rename…",
+				Clicked: func() {
+					response := menuet.App().Alert(menuet.Alert{
+						MessageText:     "Rename Timer",
+						InformativeText: "Enter a new name:",
+						Buttons:         []string{"Rename", "Cancel"},
+						Inputs:          []string{"Timer name"},
+						InputValues:     []string{name},
+					})
+					if response.Button == 0 && len(response.Inputs) > 0 && response.Inputs[0] != "" {
+						a.rename(tp, response.Inputs[0])
+					}
+				},
 			},
+			{Text: "Set Time…", Clicked: func() { a.setTimerTime(tp) }},
+			logItem,
+			{Text: "Pause on Sleep", State: t.PauseOnSleep, Clicked: func() { a.togglePauseOnSleep(tp) }},
+			{Type: menuet.Separator},
+			{Text: "Remove…", Clicked: func() { a.confirmRemove(tp, askRemove) }},
+		}
+
+		items = append(items, menuet.MenuItem{
+			Text:     fmt.Sprintf("%s  %s", t.Name, formatDuration(acc, false)),
+			State:    i == a.active,
+			Children: func() []menuet.MenuItem { return children },
 		})
 	}
 
 	items = append(items, menuet.MenuItem{Type: menuet.Separator})
-
-	if len(a.timers) > 0 {
-		// Log & Reset works on any timer, so logging one never pauses or
-		// switches away from the timer in progress. Timers with nothing to log
-		// are left disabled.
-		logChildren := make([]menuet.MenuItem, len(a.timers))
-		for i, t := range a.timers {
-			tp := t
-			acc := t.Accumulated
-			if i == a.active && a.running {
-				acc += time.Since(a.lastTick)
-			}
-			logChildren[i] = menuet.MenuItem{Text: fmt.Sprintf("%s  %s…", t.Name, formatDuration(acc, false))}
-			if acc >= time.Second {
-				logChildren[i].Clicked = func() { a.logAndReset(tp) }
-			}
-		}
-		items = append(items, menuet.MenuItem{
-			Text: "Log & Reset",
-			Children: func() []menuet.MenuItem {
-				return logChildren
-			},
-		})
-	}
-
-	if a.active >= 0 && a.active < len(a.timers) {
-		activeTimer := a.timers[a.active]
-		activeName := activeTimer.Name
-		items = append(items, menuet.MenuItem{
-			Text: "Rename Current Timer…",
-			Clicked: func() {
-				response := menuet.App().Alert(menuet.Alert{
-					MessageText:     "Rename Timer",
-					InformativeText: "Enter a new name:",
-					Buttons:         []string{"Rename", "Cancel"},
-					Inputs:          []string{"Timer name"},
-					InputValues:     []string{activeName},
-				})
-				if response.Button == 0 && len(response.Inputs) > 0 && response.Inputs[0] != "" {
-					a.rename(activeTimer, response.Inputs[0])
-				}
-			},
-		})
-	}
 
 	items = append(items, menuet.MenuItem{
 		Text: "New Timer…",
@@ -481,64 +472,6 @@ func (a *App) menuItems() []menuet.MenuItem {
 			a.setDailyTargetPrompt()
 		},
 	})
-
-	if len(a.timers) > 0 {
-		setChildren := make([]menuet.MenuItem, len(a.timers))
-		for i, t := range a.timers {
-			tp := t
-			acc := t.Accumulated
-			if i == a.active && a.running {
-				acc += time.Since(a.lastTick)
-			}
-			setChildren[i] = menuet.MenuItem{
-				Text: fmt.Sprintf("%s  %s…", t.Name, formatDuration(acc, false)),
-				Clicked: func() {
-					a.setTimerTime(tp)
-				},
-			}
-		}
-		items = append(items, menuet.MenuItem{
-			Text: "Set Time",
-			Children: func() []menuet.MenuItem {
-				return setChildren
-			},
-		})
-
-		sleepChildren := make([]menuet.MenuItem, len(a.timers))
-		for i, t := range a.timers {
-			tp := t
-			sleepChildren[i] = menuet.MenuItem{
-				Text:  t.Name,
-				State: t.PauseOnSleep,
-				Clicked: func() {
-					a.togglePauseOnSleep(tp)
-				},
-			}
-		}
-		items = append(items, menuet.MenuItem{
-			Text: "Pause on Sleep",
-			Children: func() []menuet.MenuItem {
-				return sleepChildren
-			},
-		})
-
-		children := make([]menuet.MenuItem, len(a.timers))
-		for i, t := range a.timers {
-			tp := t
-			children[i] = menuet.MenuItem{
-				Text: t.Name + "…",
-				Clicked: func() {
-					a.confirmRemove(tp, askRemove)
-				},
-			}
-		}
-		items = append(items, menuet.MenuItem{
-			Text: "Remove Timer",
-			Children: func() []menuet.MenuItem {
-				return children
-			},
-		})
-	}
 
 	return items
 }
