@@ -270,6 +270,29 @@ func TestConfirmRemove(t *testing.T) {
 		}
 	})
 
+	t.Run("confirming a running active timer stops it", func(t *testing.T) {
+		a := newTestApp(t, 2)
+		keep, target := a.timers[0], a.timers[1]
+		a.active, a.running = 1, true
+		a.lastTick = time.Now().Add(-5 * time.Second)
+
+		var asked bool
+		a.confirmRemove(target, func(string, time.Duration) bool {
+			asked = true
+			return true
+		})
+
+		if !asked {
+			t.Fatal("asked: got false want true")
+		}
+		if len(a.timers) != 1 || a.timers[0] != keep {
+			t.Errorf("timers: got %v want only the untouched timer", a.timers)
+		}
+		if a.active != -1 || a.running {
+			t.Errorf("active/running: got %d/%v want -1/false", a.active, a.running)
+		}
+	})
+
 	t.Run("paused active timer adds no live time", func(t *testing.T) {
 		a := newTestApp(t, 2)
 		keep, target := a.timers[0], a.timers[1]
@@ -296,11 +319,16 @@ func TestConfirmRemove(t *testing.T) {
 		keep0, target, keep2 := a.timers[0], a.timers[1], a.timers[2]
 		target.Accumulated = 5 * time.Second
 
+		asked := false
 		a.confirmRemove(target, func(string, time.Duration) bool {
+			asked = true
 			a.removeTimer(target)
 			return true
 		})
 
+		if !asked {
+			t.Fatal("asked: got false want true")
+		}
 		if len(a.timers) != 2 || a.timers[0] != keep0 || a.timers[1] != keep2 {
 			t.Errorf("timers: got %v want the two untouched timers", a.timers)
 		}
