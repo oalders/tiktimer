@@ -160,9 +160,63 @@ func TestRemoveTimerByPointer(t *testing.T) {
 		t.Fatalf("after removing first and second: got %v want only third", a.timers)
 	}
 
+	a.active, a.running = 0, true
 	a.removeTimer(second)
 	if len(a.timers) != 1 || a.timers[0] != third {
 		t.Errorf("stale pointer removed a timer: got %v want only third", a.timers)
+	}
+	if a.active != 0 || !a.running {
+		t.Errorf("stale pointer changed state: active=%d running=%v want 0 true", a.active, a.running)
+	}
+}
+
+func TestConfirmRemove(t *testing.T) {
+	cases := []struct {
+		name        string
+		accumulated time.Duration
+		stale       bool
+		answer      bool
+		wantAsked   bool
+		wantRemoved bool
+	}{
+		{"under a second skips prompt", 999 * time.Millisecond, false, false, false, true},
+		{"confirmed", 5 * time.Second, false, true, true, true},
+		{"cancelled", 5 * time.Second, false, false, true, false},
+		{"stale pointer", 5 * time.Second, true, true, false, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a := newTestApp(t, 2)
+			target := a.timers[1]
+			target.Name = "Job"
+			target.Accumulated = c.accumulated
+			if c.stale {
+				a.removeTimer(target)
+			}
+			before := len(a.timers)
+
+			var asked bool
+			var gotName string
+			var gotElapsed time.Duration
+			a.confirmRemove(target, func(name string, elapsed time.Duration) bool {
+				asked, gotName, gotElapsed = true, name, elapsed
+				return c.answer
+			})
+
+			if asked != c.wantAsked {
+				t.Errorf("asked: got %v want %v", asked, c.wantAsked)
+			}
+			if asked && (gotName != "Job" || gotElapsed != c.accumulated) {
+				t.Errorf("ask args: got %q %v want %q %v", gotName, gotElapsed, "Job", c.accumulated)
+			}
+			want := before
+			if c.wantRemoved {
+				want--
+			}
+			if len(a.timers) != want {
+				t.Errorf("timers: got %d want %d", len(a.timers), want)
+			}
+		})
 	}
 }
 
