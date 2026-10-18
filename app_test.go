@@ -154,6 +154,9 @@ func TestMenuItemsSettingsSubmenu(t *testing.T) {
 		return items[len(items)-1].Children()[0]
 	}
 	a.display = DisplayText
+	if odometer().State {
+		t.Error("Odometer Display is checked in text mode")
+	}
 	odometer().Clicked()
 	if a.display != DisplayOdometer {
 		t.Fatalf("display %q after clicking Odometer Display want %q", a.display, DisplayOdometer)
