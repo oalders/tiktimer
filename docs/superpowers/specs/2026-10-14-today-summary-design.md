@@ -23,8 +23,8 @@ goes to a spreadsheet later. This feature only gives a quick in-app view.
   - The title font is `monospacedDigitSystemFont`: digits line up, letters
     don't.
   - An item with no `Clicked` and no children is disabled. AppKit greys its
-    text and dims its image. Summary items therefore get a `Clicked` handler
-    (see below) so they render at full strength.
+    text and dims its image. The summary items are left this way on purpose
+    (see below).
   - `Children` (i.e. `menuItems`) runs only when the menu opens, on the main
     thread, so the summary is computed fresh at each open.
 
@@ -74,14 +74,16 @@ Start/Stop item and above the timer list:
   "five logs" can be checked at a glance.
 
 ### Clicking
-All summary items (headline, bar, rows) share one action: **reveal the log in
-Finder** (`open -R <file>` for a custom `logPath`, `open <dir>` for the default
-iCloud folder). This is useful, and it keeps the items enabled so they are not
-greyed. Nothing is changed by clicking.
+The summary items (headline, bar, rows) are information only, with no action.
+A final **Show Log in Finder** item reveals the log (`open -R <file>` for a
+custom `logPath`, `open <dir>` for the default iCloud folder). An earlier
+version made every summary item reveal the log so AppKit would not grey them,
+but clicking a statistic and getting a Finder window was unexpected (#9).
 
 ### Empty day
 When nothing is logged and every timer is zero, the section is just the
-headline `Today  0h 00m of 8h` plus the (empty-track) bar.
+headline `Today  0h 00m of 8h` plus the (empty-track) bar and Show Log in
+Finder.
 
 ## Data
 
