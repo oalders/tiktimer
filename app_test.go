@@ -2,9 +2,14 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/oalders/menuet"
 )
 
 func TestFormatDuration(t *testing.T) {
@@ -74,6 +79,43 @@ func TestSoundForRunning(t *testing.T) {
 	}
 	if soundStart == soundStop {
 		t.Error("start and stop sounds must differ so a toggle is audible")
+	}
+}
+
+func TestMenuItemsToggle(t *testing.T) {
+	newMenuApp := func(t *testing.T) *App {
+		a := newTestApp(t, 2)
+		a.logPath = filepath.Join(t.TempDir(), "log.csv") // keep off the real iCloud log
+		a.timers[1].Name = "Acme"
+		return a
+	}
+	t.Run("leads with the active timer's start/stop item", func(t *testing.T) {
+		a := newMenuApp(t)
+		a.active = 1
+
+		items := a.menuItems()
+		if !strings.HasPrefix(items[0].Text, "Start Acme") || items[0].Clicked == nil {
+			t.Fatalf("stopped: first item %q (clickable=%v) want a clickable \"Start Acme\"", items[0].Text, items[0].Clicked != nil)
+		}
+		if items[1].Type != menuet.Separator {
+			t.Errorf("second item type %q want separator", items[1].Type)
+		}
+
+		a.running = true
+		if got := a.menuItems()[0].Text; !strings.HasPrefix(got, "Stop Acme") {
+			t.Errorf("running: first item %q want \"Stop Acme\"", got)
+		}
+	})
+	for _, active := range []int{-1, 2} {
+		t.Run(fmt.Sprintf("omitted when active is %d", active), func(t *testing.T) {
+			a := newMenuApp(t)
+			a.active = active
+			for _, it := range a.menuItems() {
+				if strings.HasPrefix(it.Text, "Start ") || strings.HasPrefix(it.Text, "Stop ") {
+					t.Fatalf("unexpected toggle item %q with no active timer", it.Text)
+				}
+			}
+		})
 	}
 }
 

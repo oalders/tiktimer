@@ -171,6 +171,16 @@ func soundForRunning(running bool) string {
 	return soundStop
 }
 
+// toggleItemText labels the menu item that starts or stops the active timer,
+// with the Option+click shortcut that does the same from the menu bar.
+func toggleItemText(name string, running bool) string {
+	verb := "Start"
+	if running {
+		verb = "Stop"
+	}
+	return fmt.Sprintf("%s %s    ⌥-click", verb, name)
+}
+
 // flushActive saves elapsed time into the active timer. Caller must hold a.mu.
 func (a *App) flushActive() {
 	if a.running && a.active >= 0 && a.active < len(a.timers) {

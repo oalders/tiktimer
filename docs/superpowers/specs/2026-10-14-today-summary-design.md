@@ -30,7 +30,8 @@ goes to a spreadsheet later. This feature only gives a quick in-app view.
 
 ## What it looks like
 
-Added at the **top** of the Option+click dropdown, above the timer list:
+Added at the top of the dropdown (opened by a plain click), below the
+Start/Stop item and above the timer list:
 
 ```
   Today  7h 08m of 8h · 52m to go          ← text, bold

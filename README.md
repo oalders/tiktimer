@@ -5,8 +5,9 @@ A lightweight macOS menu bar timer for tracking time across multiple jobs.
 ## Features
 
 - Multiple named timers with independent accumulated time
-- Click the menu bar to start/stop the active timer
-- Option+click the menu bar to open the dropdown menu
+- Click the menu bar to open the dropdown menu
+- Option+click the menu bar (or use the menu's first item) to start/stop the
+  active timer
 - Switch between timers without losing accumulated time
 - Tenths-of-a-second display as a visual cue that the timer is running
 - Timer state persists across restarts (`~/.tiktimer.json`)
@@ -43,16 +44,16 @@ the menu bar.
 
 | Action | Effect |
 |---|---|
-| Click | Start/stop the active timer |
-| Option+click | Open the dropdown menu |
+| Click | Open the dropdown menu |
+| Option+click | Start/stop the active timer |
 
-The dropdown menu opens with a **Today** summary: total hours against your
-daily target, a bar split by project (solid = logged, lighter = still on a
-timer), and one row per project with its entry count. A day runs from 4 am
-to 4 am, so late-night work counts toward the evening it belongs to. It sums
-today's rows from every machine's log in the iCloud `tiktimer` folder (or your
-custom `logPath`), plus whatever is on your timers now. Click any of it to
-reveal the log in Finder.
+The dropdown menu opens with a Start/Stop item for the active timer, then a
+**Today** summary: total hours against your daily target, a bar split by
+project (solid = logged, lighter = still on a timer), and one row per project
+with its entry count. A day runs from 4 am to 4 am, so late-night work counts
+toward the evening it belongs to. It sums today's rows from every machine's
+log in the iCloud `tiktimer` folder (or your custom `logPath`), plus whatever
+is on your timers now. Click any of it to reveal the log in Finder.
 
 Time left on a timer from an earlier day doesn't count toward today. When you
 Log & Reset such a timer, the row is dated when the timer last ran, so
