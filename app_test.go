@@ -119,6 +119,32 @@ func TestMenuItemsToggle(t *testing.T) {
 	}
 }
 
+func TestMenuItemsSettingsSubmenu(t *testing.T) {
+	a := newTestApp(t, 1)
+	a.logPath = filepath.Join(t.TempDir(), "log.csv") // keep off the real iCloud log
+	items := a.menuItems()
+	last := items[len(items)-1]
+	if last.Text != "Settings" || last.Children == nil {
+		t.Fatalf("last item %q (submenu %v) want the Settings submenu", last.Text, last.Children != nil)
+	}
+	if sep := items[len(items)-2]; sep.Type != menuet.Separator {
+		t.Errorf("item before Settings has Type %q want Separator", sep.Type)
+	}
+	var texts []string
+	for _, c := range last.Children() {
+		texts = append(texts, c.Text)
+	}
+	want := []string{"Odometer Display", "Daily Target (8h)…", "Copy Log File Path"}
+	if !slices.Equal(texts, want) {
+		t.Errorf("Settings children %q want %q", texts, want)
+	}
+	for _, it := range items[:len(items)-1] {
+		if slices.Contains(want, it.Text) {
+			t.Errorf("%q is still a top-level item", it.Text)
+		}
+	}
+}
+
 func TestMenuItemsTimerSubmenus(t *testing.T) {
 	newMenuApp := func(t *testing.T) *App {
 		a := newTestApp(t, 2)
