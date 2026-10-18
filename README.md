@@ -8,7 +8,9 @@ A lightweight macOS menu bar timer for tracking time across multiple jobs.
 - Click the menu bar to open the dropdown menu
 - Option+click the menu bar (or use the menu's first item) to start/stop the
   active timer
-- Switch between timers without losing accumulated time
+- Switch between timers without losing accumulated time, using Switch To in
+  a timer's submenu (clicking a timer row only opens the submenu; the bold
+  item at the top starts/stops the active timer)
 - Tenths-of-a-second display as a visual cue that the timer is running
 - Timer state persists across restarts (`~/.tiktimer.json`)
 - Audible click feedback (system Pop sound)
