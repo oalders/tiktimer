@@ -288,6 +288,19 @@ func (a *App) addTimer(name string) {
 	a.saveAsync()
 }
 
+// confirmRemove asks before removing a timer, since its unlogged time cannot
+// be recovered; a timer with nothing on it is removed without asking.
+func (a *App) confirmRemove(target *Timer, ask func(name string, elapsed time.Duration) bool) {
+	name, elapsed, ok := a.elapsedOf(target)
+	if !ok {
+		return
+	}
+	if elapsed >= time.Second && !ask(name, elapsed) {
+		return
+	}
+	a.removeTimer(target)
+}
+
 // removeTimer deletes target if it still exists, identifying it by pointer
 // because the confirmation modal is open while indices can shift.
 func (a *App) removeTimer(target *Timer) {

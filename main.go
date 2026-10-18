@@ -256,25 +256,15 @@ func (a *App) setTimerTime(target *Timer) {
 	a.setElapsed(target, parsed)
 }
 
-// confirmRemove asks before removing a timer, since its unlogged time cannot
-// be recovered; a timer with nothing on it is removed without asking.
-func (a *App) confirmRemove(target *Timer) {
-	name, elapsed, ok := a.elapsedOf(target)
-	if !ok {
-		return
-	}
-	if elapsed >= time.Second {
-		response := menuet.App().Alert(menuet.Alert{
-			MessageText:     fmt.Sprintf("Remove “%s”?", name),
-			InformativeText: fmt.Sprintf("%s of unlogged time will be lost.", formatDuration(elapsed, false)),
-			Buttons:         []string{"Remove", "Cancel"},
-		})
-		if response.Button != 0 {
-			return // Cancel or dismissed.
-		}
-	}
-
-	a.removeTimer(target)
+// askRemove confirms removing a timer with unlogged time. Cancel comes first so
+// Return picks the non-destructive choice (Apple HIG).
+func askRemove(name string, elapsed time.Duration) bool {
+	response := menuet.App().Alert(menuet.Alert{
+		MessageText:     fmt.Sprintf("Remove “%s”?", name),
+		InformativeText: fmt.Sprintf("%s of unlogged time will be lost.", formatDuration(elapsed, false)),
+		Buttons:         []string{"Cancel", "Remove"},
+	})
+	return response.Button == 1
 }
 
 // todayItems builds the Today summary at the top of the menu: a headline,
@@ -512,7 +502,7 @@ func (a *App) menuItems() []menuet.MenuItem {
 			children[i] = menuet.MenuItem{
 				Text: t.Name + "…",
 				Clicked: func() {
-					a.confirmRemove(tp)
+					a.confirmRemove(tp, askRemove)
 				},
 			}
 		}
