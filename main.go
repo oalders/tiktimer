@@ -198,10 +198,11 @@ func (a *App) logAndReset(target *Timer) {
 	}
 	a.saveAsync()
 
-	menuet.App().Alert(menuet.Alert{
-		MessageText:     "Logged",
-		InformativeText: msg,
-		Buttons:         []string{"OK"},
+	// A notification rather than an alert: success needs no dismissing, but
+	// the path and any backdating note are still worth seeing.
+	menuet.App().Notification(menuet.Notification{
+		Title:   "Logged",
+		Message: msg,
 	})
 }
 
