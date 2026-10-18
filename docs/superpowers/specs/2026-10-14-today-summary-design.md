@@ -209,8 +209,8 @@ rest of the menu as today.
   both days is dated now (accepted). Timers saved before `lastRun` existed
   count as today.
 - **Log & Reset works on any timer:** it is an item in every timer's
-  submenu (disabled under a second), so logging one never pauses or switches the
-  running timer. The reset subtracts the logged snapshot from the timer
+  submenu (disabled under a second), so logging one never pauses or switches
+  the running timer. The reset subtracts the logged snapshot from the timer
   instead of zeroing it, so time a running timer gains while the dialog is
   open is kept, and switching timers mid-dialog no longer skips the reset.
 - **Log & Reset as Yesterday:** a dialog button, shown unless the time is already from

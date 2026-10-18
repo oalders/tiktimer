@@ -203,12 +203,28 @@ func TestMenuItemsTimerSubmenus(t *testing.T) {
 		})
 	}
 
-	t.Run("old top-level timer menus are gone", func(t *testing.T) {
-		for _, it := range newMenuApp(t).menuItems() {
-			switch it.Text {
-			case "Log & Reset", "Set Time", "Pause on Sleep", "Remove Timer", "Rename Current Timer…":
-				t.Errorf("unexpected top-level item %q", it.Text)
-			}
+	t.Run("Log & Reset counts live time on the running timer", func(t *testing.T) {
+		a := newMenuApp(t)
+		a.timers[0].Accumulated = 500 * time.Millisecond
+		a.running = true
+		a.lastTick = time.Now().Add(-2 * time.Second)
+		if child(t, row(t, a.menuItems(), "Acme"), "Log & Reset…").Clicked == nil {
+			t.Error("Log & Reset is disabled though live time is over a second")
+		}
+	})
+
+	t.Run("Pause on Sleep toggles only its own timer", func(t *testing.T) {
+		a := newMenuApp(t)
+		ps := child(t, row(t, a.menuItems(), "Beta"), "Pause on Sleep")
+		if ps.State != a.timers[1].PauseOnSleep {
+			t.Errorf("State %v want %v", ps.State, a.timers[1].PauseOnSleep)
+		}
+		ps.Clicked()
+		if !a.timers[1].PauseOnSleep {
+			t.Error("Beta's PauseOnSleep did not flip")
+		}
+		if a.timers[0].PauseOnSleep {
+			t.Error("Acme's PauseOnSleep changed")
 		}
 	})
 }
