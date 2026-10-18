@@ -186,6 +186,19 @@ func TestBuildDaySummary(t *testing.T) {
 	}
 }
 
+func TestBuildDaySummaryChosenColor(t *testing.T) {
+	timers := []timerTime{
+		{Name: "Acme", Elapsed: time.Hour},
+		{Name: "Muevelo", Elapsed: time.Hour, Color: "Blue"},
+		{Name: "Globex", Elapsed: time.Hour, Color: "no such colour"},
+	}
+	got := buildDaySummary(timers, readTodayLogged(nil, time.Now()))
+	// Muevelo's choice wins over its slot; the others keep their positions.
+	if len(got) != 3 || got[0].Color != 0 || got[1].Color != paletteIndex("Blue") || got[2].Color != 2 {
+		t.Errorf("got %+v", got)
+	}
+}
+
 func TestBuildDaySummaryTimerOnly(t *testing.T) {
 	timers := []timerTime{{Name: "Acme", Elapsed: time.Minute}, {Name: "Blip", Elapsed: 59 * time.Second}}
 	got := buildDaySummary(timers, readTodayLogged(nil, time.Now()))

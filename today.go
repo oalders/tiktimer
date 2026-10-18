@@ -229,16 +229,19 @@ func (p projectTotal) Total() time.Duration { return p.Logged + p.Unlogged }
 // headline total and the bar.
 func (p projectTotal) ShowRow() bool { return p.Entries > 0 || p.Unlogged >= time.Minute }
 
-// timerTime is a timer's name and its current (not yet logged) elapsed time.
+// timerTime is a timer's name, its current (not yet logged) elapsed time and
+// its chosen palette color name, if any.
 type timerTime struct {
 	Name    string
 	Elapsed time.Duration
+	Color   string
 }
 
 // buildDaySummary merges timer time with today's logged time, keyed by name.
 // Timer order comes first, then CSV-only names (renamed or removed timers) in
 // order of first appearance, so each project's palette color stays stable
-// through the day. Projects with no time at all are omitted.
+// through the day. A timer's chosen color overrides its position. Projects
+// with no time at all are omitted.
 func buildDaySummary(timers []timerTime, tl todayLog) []projectTotal {
 	byName := map[string]*projectTotal{}
 	var ordered []*projectTotal
@@ -253,6 +256,9 @@ func buildDaySummary(timers []timerTime, tl todayLog) []projectTotal {
 	}
 	for _, t := range timers {
 		p := get(strings.TrimSpace(t.Name))
+		if c := paletteIndex(t.Color); c >= 0 {
+			p.Color = c
+		}
 		if t.Elapsed > 0 {
 			p.Unlogged += t.Elapsed
 		}

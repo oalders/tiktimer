@@ -271,6 +271,24 @@ func askRemove(name string, elapsed time.Duration) bool {
 	return response.Button == 1
 }
 
+// colorItems is a timer's Colour submenu: Automatic, then the palette with a
+// swatch per color. current is the timer's saved color name.
+func colorItems(a *App, tp *Timer, current string) []menuet.MenuItem {
+	items := []menuet.MenuItem{
+		{Text: "Automatic", State: current == "", Clicked: func() { a.setColor(tp, "") }},
+		{Type: menuet.Separator},
+	}
+	for i, p := range projectPalette {
+		items = append(items, menuet.MenuItem{
+			Text:    p.Name,
+			Image:   renderSwatch(i),
+			State:   current == p.Name,
+			Clicked: func() { a.setColor(tp, p.Name) },
+		})
+	}
+	return items
+}
+
 // todayItems builds the Today summary at the top of the menu: a headline,
 // the stacked day bar, and one row per project with a legend dot. Log files
 // are read without holding the mutex. The rows are information only; their
@@ -421,6 +439,7 @@ func (a *App) menuItems() []menuet.MenuItem {
 			{Text: "Set Time…", Clicked: func() { a.setTimerTime(tp) }},
 			logItem,
 			{Text: "Pause on Sleep", State: t.PauseOnSleep, Clicked: func() { a.togglePauseOnSleep(tp) }},
+			{Text: "Colour", Children: func() []menuet.MenuItem { return colorItems(a, tp, t.Color) }},
 			{Type: menuet.Separator},
 			{Text: "Remove…", Clicked: func() { a.confirmRemove(tp, askRemove) }},
 		}

@@ -213,7 +213,7 @@ func TestMenuItemsTimerSubmenus(t *testing.T) {
 					t.Errorf("%s: blank child Type %v want Separator", name, c.Type)
 				}
 			}
-			want := []string{"Switch To", "Rename…", "Set Time…", "Log & Reset…", "Pause on Sleep", "", "Remove…"}
+			want := []string{"Switch To", "Rename…", "Set Time…", "Log & Reset…", "Pause on Sleep", "Colour", "", "Remove…"}
 			if !slices.Equal(texts, want) {
 				t.Errorf("%s: children %q want %q", name, texts, want)
 			}
@@ -281,6 +281,25 @@ func TestMenuItemsTimerSubmenus(t *testing.T) {
 		}
 		if a.timers[0].PauseOnSleep {
 			t.Error("Acme's PauseOnSleep changed")
+		}
+	})
+
+	t.Run("Colour sets only its own timer", func(t *testing.T) {
+		a := newMenuApp(t)
+		colours := func() menuet.MenuItem { return child(t, row(t, a.menuItems(), "Beta"), "Colour") }
+		if !child(t, colours(), "Automatic").State {
+			t.Error("Automatic is not checked on a timer with no colour")
+		}
+		child(t, colours(), "Blue").Clicked()
+		if a.timers[1].Color != "Blue" || a.timers[0].Color != "" {
+			t.Fatalf("colours %q, %q want \"\", \"Blue\"", a.timers[0].Color, a.timers[1].Color)
+		}
+		if !child(t, colours(), "Blue").State || child(t, colours(), "Automatic").State {
+			t.Error("checkmark did not move to Blue")
+		}
+		child(t, colours(), "Automatic").Clicked()
+		if a.timers[1].Color != "" {
+			t.Errorf("colour %q after Automatic want \"\"", a.timers[1].Color)
 		}
 	})
 }
