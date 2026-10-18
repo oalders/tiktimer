@@ -117,7 +117,8 @@ headline `Today  0h 00m of 8h` plus the (empty-track) bar.
 Projects are ordered by timer order first, then CSV-only names (renamed or
 removed timers) in order of first appearance in the files. Palette color = position
 in that order, unless the timer has picked a color from its Colour submenu (#20),
-saved by palette name as `color` on the timer. Colors therefore stay stable through the
+saved by palette name as `color` on the timer. A chosen color doesn't reserve its
+slot, so two projects can share a color; an unknown name falls back to position. Colors therefore stay stable through the
 day as long as the timers don't change.
 
 ## Daily target

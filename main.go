@@ -402,6 +402,8 @@ func (a *App) menuItems() []menuet.MenuItem {
 	for i, t := range a.timers {
 		idx := i
 		tp := t
+		// Read under the lock here; the Colour submenu is built later.
+		colour := t.Color
 		name := t.Name
 		acc := t.Accumulated
 		if i == a.active && a.running {
@@ -439,7 +441,7 @@ func (a *App) menuItems() []menuet.MenuItem {
 			{Text: "Set Time…", Clicked: func() { a.setTimerTime(tp) }},
 			logItem,
 			{Text: "Pause on Sleep", State: t.PauseOnSleep, Clicked: func() { a.togglePauseOnSleep(tp) }},
-			{Text: "Colour", Children: func() []menuet.MenuItem { return colorItems(a, tp, t.Color) }},
+			{Text: "Colour", Children: func() []menuet.MenuItem { return colorItems(a, tp, colour) }},
 			{Type: menuet.Separator},
 			{Text: "Remove…", Clicked: func() { a.confirmRemove(tp, askRemove) }},
 		}

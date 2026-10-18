@@ -860,7 +860,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 
 	a := newApp()
 	a.home = dir
-	a.timers = []*Timer{{Name: "A", Accumulated: time.Minute, PauseOnSleep: true}, {Name: "B"}}
+	a.timers = []*Timer{{Name: "A", Accumulated: time.Minute, PauseOnSleep: true}, {Name: "B", Color: "Teal"}}
 	a.active = 1
 	a.display = DisplayOdometer
 	a.logPath = "/custom/log.csv"
@@ -874,6 +874,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if !loaded.timers[0].PauseOnSleep || loaded.timers[1].PauseOnSleep {
 		t.Errorf("PauseOnSleep not restored: got %v/%v want true/false", loaded.timers[0].PauseOnSleep, loaded.timers[1].PauseOnSleep)
+	}
+	if loaded.timers[0].Color != "" || loaded.timers[1].Color != "Teal" {
+		t.Errorf("Color not restored: got %q/%q want \"\"/Teal", loaded.timers[0].Color, loaded.timers[1].Color)
 	}
 	if loaded.active != 1 || loaded.display != DisplayOdometer || loaded.logPath != "/custom/log.csv" {
 		t.Errorf("scalar fields not restored: active=%d display=%q logPath=%q", loaded.active, loaded.display, loaded.logPath)

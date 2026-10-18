@@ -193,8 +193,8 @@ func TestBuildDaySummaryChosenColor(t *testing.T) {
 		{Name: "Globex", Elapsed: time.Hour, Color: "no such colour"},
 	}
 	got := buildDaySummary(timers, readTodayLogged(nil, time.Now()))
-	// Muevelo's choice wins over its slot; the others keep their positions.
-	if len(got) != 3 || got[0].Color != 0 || got[1].Color != paletteIndex("Blue") || got[2].Color != 2 {
+	// Muevelo's Blue (slot 0) wins over its slot 1; the others keep their positions.
+	if len(got) != 3 || got[0].Color != 0 || got[1].Color != 0 || got[2].Color != 2 {
 		t.Errorf("got %+v", got)
 	}
 }
@@ -385,12 +385,13 @@ func TestTodaySnapshot(t *testing.T) {
 	a := newTestApp(t, 2)
 	a.timers[0].Accumulated = time.Hour
 	a.timers[1].Accumulated = 10 * time.Minute
+	a.timers[1].Color = "Teal"
 	a.active = 1
 	a.lastTick = time.Now().Add(-time.Minute)
 
 	// Stopped: the active timer reports exactly its accumulated time.
 	timers, _, target := a.todaySnapshot()
-	if len(timers) != 2 || timers[0].Elapsed != time.Hour || timers[1].Elapsed != 10*time.Minute {
+	if len(timers) != 2 || timers[0].Elapsed != time.Hour || timers[1].Elapsed != 10*time.Minute || timers[1].Color != "Teal" {
 		t.Fatalf("stopped: timers = %+v", timers)
 	}
 	if target != defaultDailyTarget {
