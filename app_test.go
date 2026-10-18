@@ -180,6 +180,7 @@ func TestConfirmRemove(t *testing.T) {
 		wantRemoved bool
 	}{
 		{"under a second skips prompt", 999 * time.Millisecond, false, false, false, true},
+		{"exactly one second asks", time.Second, false, true, true, true},
 		{"confirmed", 5 * time.Second, false, true, true, true},
 		{"cancelled", 5 * time.Second, false, false, true, false},
 		{"stale pointer", 5 * time.Second, true, true, false, false},
@@ -218,6 +219,42 @@ func TestConfirmRemove(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("running active timer counts live time", func(t *testing.T) {
+		a := newTestApp(t, 2)
+		target := a.timers[1]
+		a.active, a.running = 1, true
+		a.lastTick = time.Now().Add(-5 * time.Second)
+
+		var asked bool
+		var gotElapsed time.Duration
+		a.confirmRemove(target, func(_ string, elapsed time.Duration) bool {
+			asked, gotElapsed = true, elapsed
+			return false
+		})
+
+		if !asked {
+			t.Fatal("asked: got false want true")
+		}
+		if gotElapsed < 5*time.Second {
+			t.Errorf("elapsed: got %v want >= 5s", gotElapsed)
+		}
+	})
+
+	t.Run("removed while the dialog is open", func(t *testing.T) {
+		a := newTestApp(t, 3)
+		keep0, target, keep2 := a.timers[0], a.timers[1], a.timers[2]
+		target.Accumulated = 5 * time.Second
+
+		a.confirmRemove(target, func(string, time.Duration) bool {
+			a.removeTimer(target)
+			return true
+		})
+
+		if len(a.timers) != 2 || a.timers[0] != keep0 || a.timers[1] != keep2 {
+			t.Errorf("timers: got %v want the two untouched timers", a.timers)
+		}
+	})
 }
 
 func TestRename(t *testing.T) {

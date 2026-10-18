@@ -289,7 +289,7 @@ func (a *App) addTimer(name string) {
 }
 
 // confirmRemove asks before removing a timer, since its unlogged time cannot
-// be recovered; a timer with nothing on it is removed without asking.
+// be recovered; a timer with under a second on it is removed without asking.
 func (a *App) confirmRemove(target *Timer, ask func(name string, elapsed time.Duration) bool) {
 	name, elapsed, ok := a.elapsedOf(target)
 	if !ok {
