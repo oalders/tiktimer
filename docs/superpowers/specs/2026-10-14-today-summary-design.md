@@ -23,8 +23,8 @@ goes to a spreadsheet later. This feature only gives a quick in-app view.
   - The title font is `monospacedDigitSystemFont`: digits line up, letters
     don't.
   - An item with no `Clicked` and no children is disabled. AppKit greys its
-    text and dims its image. The summary items are left this way on purpose
-    (see below), so the bar and legend dots render dimmed too.
+    text and dims its image, so the summary items get a click that does
+    nothing (see below).
   - `Children` (i.e. `menuItems`) runs only when the menu opens, on the main
     thread, so the summary is computed fresh at each open.
 
@@ -74,7 +74,9 @@ Start/Stop item and above the timer list:
   "five logs" can be checked at a glance.
 
 ### Clicking
-The summary items (headline, bar, rows) are information only, with no action.
+The summary items (headline, bar, rows) are information only: clicking one
+just closes the menu. They still have an empty action, because without one
+AppKit draws them disabled and the summary is hard to read (#18).
 **Show Log in Finder**, in the Settings submenu, reveals the log (`open -R
 <file>` for a custom `logPath`, `open <dir>` for the default iCloud folder).
 An earlier version made every summary item reveal the log so AppKit would not
@@ -161,7 +163,7 @@ rest of the menu as today.
   pixel has the project color, and that the track shows past total < target;
   the over-target case draws the tick.
 - `dailyTargetHours` save/load round trip and the default of 8.
-- `todayItems`: every summary row has no action.
+- `todayItems`: every summary row has an action, so none render disabled.
 
 ## Out of scope
 
