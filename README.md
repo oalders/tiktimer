@@ -67,7 +67,8 @@ seconds), which dates the row 23:59 on the previous day.
 The dropdown menu also lets you:
 
 - Act on any timer from its submenu (hover a timer name): Switch To, Rename,
-  Set Time, Log & Reset, Pause on Sleep, or Remove it
+  Set Time, Log & Reset, Pause on Sleep, Colour (its Today bar color), or
+  Remove it
 - Log & Reset any timer: write a CSV row with a note, then take that time off
   the timer, without pausing or switching away from the timer that's
   running. A name or note starting with `=`, `+`, `-` or `@` is written with

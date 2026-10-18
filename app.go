@@ -23,6 +23,9 @@ type Timer struct {
 	// summary leaves such leftover time out. Zero (older save files) means
 	// today.
 	LastRun time.Time `json:"lastRun,omitzero"`
+	// Color names the projectPalette entry for this timer in the Today
+	// summary. Empty means the color its position gives it.
+	Color string `json:"color,omitempty"`
 }
 
 type DisplayMode string
@@ -266,6 +269,21 @@ func (a *App) togglePauseOnSleep(target *Timer) {
 	a.saveAsync()
 }
 
+// setColor sets a timer's palette color by name; "" returns it to the color
+// its position gives it.
+func (a *App) setColor(target *Timer, name string) {
+	a.mu.Lock()
+	for _, t := range a.timers {
+		if t == target {
+			t.Color = name
+			break
+		}
+	}
+	a.mu.Unlock()
+
+	a.saveAsync()
+}
+
 func (a *App) switchTo(index int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -496,7 +514,7 @@ func (a *App) todaySnapshot() (timers []timerTime, logPath string, target time.D
 			// timer stays in the list so palette colors do not shift.
 			acc = 0
 		}
-		timers = append(timers, timerTime{Name: t.Name, Elapsed: acc})
+		timers = append(timers, timerTime{Name: t.Name, Elapsed: acc, Color: t.Color})
 	}
 	return timers, a.logPath, a.targetLocked()
 }

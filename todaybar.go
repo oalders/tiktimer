@@ -24,14 +24,18 @@ const (
 )
 
 // projectPalette holds saturated mid-tone hues that read on both the light and
-// the dark menu background. Colors cycle when there are more projects.
-var projectPalette = []color.NRGBA{
-	{0x3B, 0x82, 0xF6, 0xFF}, // blue
-	{0xF5, 0x9E, 0x0B, 0xFF}, // orange
-	{0x22, 0xC5, 0x5E, 0xFF}, // green
-	{0xA8, 0x55, 0xF7, 0xFF}, // purple
-	{0xEC, 0x48, 0x99, 0xFF}, // pink
-	{0x14, 0xB8, 0xA6, 0xFF}, // teal
+// the dark menu background. Colors cycle when there are more projects. The
+// names are shown in a timer's Colour submenu and saved on the timer.
+var projectPalette = []struct {
+	Name  string
+	Color color.NRGBA
+}{
+	{"Blue", color.NRGBA{0x3B, 0x82, 0xF6, 0xFF}},
+	{"Orange", color.NRGBA{0xF5, 0x9E, 0x0B, 0xFF}},
+	{"Green", color.NRGBA{0x22, 0xC5, 0x5E, 0xFF}},
+	{"Purple", color.NRGBA{0xA8, 0x55, 0xF7, 0xFF}},
+	{"Pink", color.NRGBA{0xEC, 0x48, 0x99, 0xFF}},
+	{"Teal", color.NRGBA{0x14, 0xB8, 0xA6, 0xFF}},
 }
 
 var (
@@ -41,7 +45,17 @@ var (
 )
 
 func paletteColor(i int) color.NRGBA {
-	return projectPalette[i%len(projectPalette)]
+	return projectPalette[i%len(projectPalette)].Color
+}
+
+// paletteIndex returns the palette slot with the given name, or -1.
+func paletteIndex(name string) int {
+	for i, p := range projectPalette {
+		if p.Name == name {
+			return i
+		}
+	}
+	return -1
 }
 
 // unloggedShade is a project's color at reduced opacity, marking time still on
