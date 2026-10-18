@@ -162,10 +162,18 @@ func TestMenuItemsTimerSubmenus(t *testing.T) {
 			var texts []string
 			for _, c := range it.Children() {
 				texts = append(texts, c.Text)
+				if c.Text == "" && c.Type != menuet.Separator {
+					t.Errorf("%s: blank child Type %v want Separator", name, c.Type)
+				}
 			}
 			want := []string{"Switch To", "Rename…", "Set Time…", "Log & Reset…", "Pause on Sleep", "", "Remove…"}
 			if !slices.Equal(texts, want) {
 				t.Errorf("%s: children %q want %q", name, texts, want)
+			}
+			for _, text := range []string{"Rename…", "Set Time…", "Remove…"} {
+				if child(t, it, text).Clicked == nil {
+					t.Errorf("%s: %s is not clickable", name, text)
+				}
 			}
 		}
 	})
@@ -215,12 +223,13 @@ func TestMenuItemsTimerSubmenus(t *testing.T) {
 
 	t.Run("Pause on Sleep toggles only its own timer", func(t *testing.T) {
 		a := newMenuApp(t)
+		a.timers[1].PauseOnSleep = true
 		ps := child(t, row(t, a.menuItems(), "Beta"), "Pause on Sleep")
-		if ps.State != a.timers[1].PauseOnSleep {
-			t.Errorf("State %v want %v", ps.State, a.timers[1].PauseOnSleep)
+		if !ps.State {
+			t.Error("State false want true")
 		}
 		ps.Clicked()
-		if !a.timers[1].PauseOnSleep {
+		if a.timers[1].PauseOnSleep {
 			t.Error("Beta's PauseOnSleep did not flip")
 		}
 		if a.timers[0].PauseOnSleep {
