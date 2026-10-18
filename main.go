@@ -273,8 +273,8 @@ func askRemove(name string, elapsed time.Duration) bool {
 
 // todayItems builds the Today summary at the top of the menu: a headline,
 // the stacked day bar, and one row per project with a legend dot. Log files
-// are read without holding the mutex. Every item reveals the log in Finder
-// when clicked, which also keeps AppKit from greying them out as disabled.
+// are read without holding the mutex. The summary rows are information only,
+// so they have no action; a final item reveals the log in Finder.
 func (a *App) todayItems() []menuet.MenuItem {
 	timers, logPath, target := a.todaySnapshot()
 	tl := readTodayLogged(logFilesToRead(logPath), time.Now())
@@ -284,23 +284,23 @@ func (a *App) todayItems() []menuet.MenuItem {
 	for _, p := range projects {
 		total += p.Total()
 	}
-	reveal := func() { revealLog(logPath) }
-
 	items := []menuet.MenuItem{
-		{Text: headlineText(total, target, tl), FontWeight: menuet.WeightBold, Clicked: reveal},
-		{Image: renderDayBar(projects, target), Clicked: reveal},
+		{Text: headlineText(total, target, tl), FontWeight: menuet.WeightBold},
+		{Image: renderDayBar(projects, target)},
 	}
 	for _, p := range projects {
 		if !p.ShowRow() {
 			continue
 		}
 		items = append(items, menuet.MenuItem{
-			Text:    rowText(p),
-			Image:   renderSwatch(p.Color),
-			Clicked: reveal,
+			Text:  rowText(p),
+			Image: renderSwatch(p.Color),
 		})
 	}
-	return items
+	return append(items, menuet.MenuItem{
+		Text:    "Show Log in Finder",
+		Clicked: func() { revealLog(logPath) },
+	})
 }
 
 // revealLog shows the log in Finder: the file itself for a custom logPath,

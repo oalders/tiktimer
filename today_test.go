@@ -580,3 +580,23 @@ func TestLogTimestampJudgesDayWhenDialogOpened(t *testing.T) {
 		t.Errorf("leftover with as-yesterday: got %v, want when it last ran", got)
 	}
 }
+
+func TestTodayItemsAreReadOnly(t *testing.T) {
+	a := newTestApp(t, 1)
+	a.logPath = filepath.Join(t.TempDir(), "log.csv") // keep off the real iCloud log
+	a.timers[0].Accumulated = time.Hour               // enough for a project row
+
+	items := a.todayItems()
+	// Headline, bar, one project row, then the Finder item.
+	if len(items) != 4 {
+		t.Fatalf("got %d items want 4: %+v", len(items), items)
+	}
+	for _, it := range items[:len(items)-1] {
+		if it.Clicked != nil {
+			t.Errorf("summary item %q is clickable", it.Text)
+		}
+	}
+	if last := items[len(items)-1]; last.Text != "Show Log in Finder" || last.Clicked == nil {
+		t.Errorf("last item %q (clickable %v) want a clickable Show Log in Finder", last.Text, last.Clicked != nil)
+	}
+}
