@@ -451,27 +451,17 @@ func (a *App) menuItems() []menuet.MenuItem {
 		},
 	})
 
-	items = append(items, menuet.MenuItem{
-		Text: "Copy Log File Path",
-		Clicked: func() {
-			a.copyLogPath()
-		},
-	})
-
-	items = append(items, menuet.MenuItem{
-		Text:  "Odometer Display",
-		State: a.display == DisplayOdometer,
-		Clicked: func() {
-			a.toggleDisplay()
-		},
-	})
-
-	items = append(items, menuet.MenuItem{
-		Text: fmt.Sprintf("Daily Target (%s)…", formatCompact(a.targetLocked())),
-		Clicked: func() {
-			a.setDailyTargetPrompt()
-		},
-	})
+	// Settings are grouped apart from the everyday actions; menuet adds Start at
+	// Login and Quit right after this.
+	settings := []menuet.MenuItem{
+		{Text: "Odometer Display", State: a.display == DisplayOdometer, Clicked: a.toggleDisplay},
+		{Text: fmt.Sprintf("Daily Target (%s)…", formatCompact(a.targetLocked())), Clicked: a.setDailyTargetPrompt},
+		{Text: "Copy Log File Path", Clicked: a.copyLogPath},
+	}
+	items = append(items,
+		menuet.MenuItem{Type: menuet.Separator},
+		menuet.MenuItem{Text: "Settings", Children: func() []menuet.MenuItem { return settings }},
+	)
 
 	return items
 }

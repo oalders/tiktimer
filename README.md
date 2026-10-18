@@ -73,7 +73,8 @@ The dropdown menu also lets you:
   running. A name or note starting with `=`, `+`, `-` or `@` is written with
   a leading `'` so a spreadsheet won't run it as a formula
 - Add timers
-- Set the daily target (default 8h)
+- Change settings from the **Settings** submenu: Odometer Display, the
+  Daily Target (default 8h), and Copy Log File Path
 
 ## Development
 
