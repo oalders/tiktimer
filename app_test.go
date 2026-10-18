@@ -265,6 +265,30 @@ func TestConfirmRemove(t *testing.T) {
 		if gotElapsed < 5*time.Second {
 			t.Errorf("elapsed: got %v want >= 5s", gotElapsed)
 		}
+		if len(a.timers) != 2 || !slices.Contains(a.timers, target) {
+			t.Errorf("timers: got %v want both timers kept after cancel", a.timers)
+		}
+	})
+
+	t.Run("paused active timer adds no live time", func(t *testing.T) {
+		a := newTestApp(t, 2)
+		keep, target := a.timers[0], a.timers[1]
+		target.Accumulated = 0
+		a.active, a.running = 1, false
+		a.lastTick = time.Now().Add(-5 * time.Second)
+
+		var asked bool
+		a.confirmRemove(target, func(string, time.Duration) bool {
+			asked = true
+			return false
+		})
+
+		if asked {
+			t.Error("asked: got true want false")
+		}
+		if len(a.timers) != 1 || a.timers[0] != keep {
+			t.Errorf("timers: got %v want only the untouched timer", a.timers)
+		}
 	})
 
 	t.Run("removed while the dialog is open", func(t *testing.T) {
