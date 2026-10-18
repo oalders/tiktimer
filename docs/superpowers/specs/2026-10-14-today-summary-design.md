@@ -39,7 +39,6 @@ Start/Stop item and above the timer list:
   ● Acme        4h 50m · 5 logged + 23m on timer
   ● Globex      1h 48m · 2 logged
   ● Initech     0h 30m · 1 logged
-  Show Log in Finder                       ← the only clickable item
   ─────────────────────────────────
   Acme  0:23:10   ✓
   ...
@@ -76,15 +75,16 @@ Start/Stop item and above the timer list:
 
 ### Clicking
 The summary items (headline, bar, rows) are information only, with no action.
-A final **Show Log in Finder** item reveals the log (`open -R <file>` for a
-custom `logPath`, `open <dir>` for the default iCloud folder). An earlier
-version made every summary item reveal the log so AppKit would not grey them,
-but clicking a statistic and getting a Finder window was unexpected (#9).
+**Show Log in Finder**, in the Settings submenu, reveals the log (`open -R
+<file>` for a custom `logPath`, `open <dir>` for the default iCloud folder).
+An earlier version made every summary item reveal the log so AppKit would not
+grey them, but clicking a statistic and getting a Finder window was unexpected
+(#9). The reveal item then sat below the summary until it moved to Settings,
+since it is rarely needed (#16).
 
 ### Empty day
 When nothing is logged and every timer is zero, the section is just the
-headline `Today  0h 00m of 8h` plus the (empty-track) bar and Show Log in
-Finder.
+headline `Today  0h 00m of 8h` plus the (empty-track) bar.
 
 ## Data
 
@@ -161,8 +161,7 @@ rest of the menu as today.
   pixel has the project color, and that the track shows past total < target;
   the over-target case draws the tick.
 - `dailyTargetHours` save/load round trip and the default of 8.
-- `todayItems`: every summary row has no action, and the last item is a
-  clickable Show Log in Finder.
+- `todayItems`: every summary row has no action.
 
 ## Out of scope
 

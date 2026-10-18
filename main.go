@@ -273,8 +273,8 @@ func askRemove(name string, elapsed time.Duration) bool {
 
 // todayItems builds the Today summary at the top of the menu: a headline,
 // the stacked day bar, and one row per project with a legend dot. Log files
-// are read without holding the mutex. The summary rows are information only,
-// so they have no action; a final item reveals the log in Finder.
+// are read without holding the mutex. The rows are information only, so they
+// have no action.
 func (a *App) todayItems() []menuet.MenuItem {
 	timers, logPath, target := a.todaySnapshot()
 	tl := readTodayLogged(logFilesToRead(logPath), time.Now())
@@ -297,10 +297,7 @@ func (a *App) todayItems() []menuet.MenuItem {
 			Image: renderSwatch(p.Color),
 		})
 	}
-	return append(items, menuet.MenuItem{
-		Text:    "Show Log in Finder",
-		Clicked: func() { revealLog(logPath) },
-	})
+	return items
 }
 
 // revealLog shows the log in Finder: the file itself for a custom logPath,
@@ -457,6 +454,7 @@ func (a *App) menuItems() []menuet.MenuItem {
 		{Text: "Odometer Display", State: a.display == DisplayOdometer, Clicked: a.toggleDisplay},
 		{Text: fmt.Sprintf("Daily Target (%s)…", formatCompact(a.targetLocked())), Clicked: a.setDailyTargetPrompt},
 		{Text: "Copy Log File Path", Clicked: a.copyLogPath},
+		{Text: "Show Log in Finder", Clicked: func() { revealLog(a.logPath) }},
 	}
 	items = append(items,
 		menuet.MenuItem{Type: menuet.Separator},
