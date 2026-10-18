@@ -412,7 +412,7 @@ func (a *App) menuItems() []menuet.MenuItem {
 			if i == a.active && a.running {
 				acc += time.Since(a.lastTick)
 			}
-			logChildren[i] = menuet.MenuItem{Text: fmt.Sprintf("%s  %s", t.Name, formatDuration(acc, false))}
+			logChildren[i] = menuet.MenuItem{Text: fmt.Sprintf("%s  %s…", t.Name, formatDuration(acc, false))}
 			if acc >= time.Second {
 				logChildren[i].Clicked = func() { a.logAndReset(tp) }
 			}
@@ -429,7 +429,7 @@ func (a *App) menuItems() []menuet.MenuItem {
 		activeTimer := a.timers[a.active]
 		activeName := activeTimer.Name
 		items = append(items, menuet.MenuItem{
-			Text: "Rename Current Timer...",
+			Text: "Rename Current Timer…",
 			Clicked: func() {
 				response := menuet.App().Alert(menuet.Alert{
 					MessageText:     "Rename Timer",
@@ -446,7 +446,7 @@ func (a *App) menuItems() []menuet.MenuItem {
 	}
 
 	items = append(items, menuet.MenuItem{
-		Text: "New Timer...",
+		Text: "New Timer…",
 		Clicked: func() {
 			response := menuet.App().Alert(menuet.Alert{
 				MessageText:     "New Timer",
@@ -491,7 +491,7 @@ func (a *App) menuItems() []menuet.MenuItem {
 				acc += time.Since(a.lastTick)
 			}
 			setChildren[i] = menuet.MenuItem{
-				Text: fmt.Sprintf("%s  %s", t.Name, formatDuration(acc, false)),
+				Text: fmt.Sprintf("%s  %s…", t.Name, formatDuration(acc, false)),
 				Clicked: func() {
 					a.setTimerTime(tp)
 				},
