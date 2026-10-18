@@ -208,8 +208,8 @@ rest of the menu as today.
   "Logged" notification says when a row was backdated. A timer that ran on
   both days is dated now (accepted). Timers saved before `lastRun` existed
   count as today.
-- **Log & Reset works on any timer:** it is a submenu of all timers (those
-  under a second are disabled), so logging one never pauses or switches the
+- **Log & Reset works on any timer:** it is an item in every timer's
+  submenu (disabled under a second), so logging one never pauses or switches the
   running timer. The reset subtracts the logged snapshot from the timer
   instead of zeroing it, so time a running timer gains while the dialog is
   open is kept, and switching timers mid-dialog no longer skips the reset.

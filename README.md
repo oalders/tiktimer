@@ -64,13 +64,13 @@ seconds), which dates the row 23:59 on the previous day.
 
 The dropdown menu also lets you:
 
-- Switch between timers (click a timer name)
-- Log & Reset any timer (pick it from the submenu): write a CSV row with a
-  note, then take that time off the timer, without pausing or switching away
-  from the timer that's running. A name or note starting with `=`, `+`, `-`
-  or `@` is written with a leading `'` so a spreadsheet won't run it as a
-  formula
-- Add or remove timers
+- Act on any timer from its submenu (hover a timer name): Switch To, Rename,
+  Set Time, Log & Reset, Pause on Sleep, or Remove it
+- Log & Reset any timer: write a CSV row with a note, then take that time off
+  the timer, without pausing or switching away from the timer that's
+  running. A name or note starting with `=`, `+`, `-` or `@` is written with
+  a leading `'` so a spreadsheet won't run it as a formula
+- Add timers
 - Set the daily target (default 8h)
 
 ## Development
