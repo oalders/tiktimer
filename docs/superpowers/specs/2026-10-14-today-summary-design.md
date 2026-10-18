@@ -205,7 +205,7 @@ rest of the menu as today.
   stopped timer whose `lastRun` is before the current work day contributes
   nothing to Today, and Log & Reset dates its row at `lastRun` instead of now,
   so the CSV and the spreadsheet file it under the day it was worked. The
-  "Logged" alert says when a row was backdated. A timer that ran on both days
+  "Logged" notification says when a row was backdated. A timer that ran on both days
   is dated now (accepted). Timers saved before `lastRun` existed count as
   today.
 - **Log & Reset works on any timer:** it is a submenu of all timers (those
