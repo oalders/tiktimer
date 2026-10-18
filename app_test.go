@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 )
@@ -217,8 +218,33 @@ func TestConfirmRemove(t *testing.T) {
 			if len(a.timers) != want {
 				t.Errorf("timers: got %d want %d", len(a.timers), want)
 			}
+			wantPresent := !c.wantRemoved && !c.stale
+			if got := slices.Contains(a.timers, target); got != wantPresent {
+				t.Errorf("target present: got %v want %v", got, wantPresent)
+			}
 		})
 	}
+
+	t.Run("running timer does not add live time to an idle one", func(t *testing.T) {
+		a := newTestApp(t, 2)
+		keep, target := a.timers[0], a.timers[1]
+		target.Accumulated = 0
+		a.active, a.running = 0, true
+		a.lastTick = time.Now().Add(-5 * time.Second)
+
+		var asked bool
+		a.confirmRemove(target, func(string, time.Duration) bool {
+			asked = true
+			return false
+		})
+
+		if asked {
+			t.Error("asked: got true want false")
+		}
+		if len(a.timers) != 1 || a.timers[0] != keep {
+			t.Errorf("timers: got %v want only the running timer", a.timers)
+		}
+	})
 
 	t.Run("running active timer counts live time", func(t *testing.T) {
 		a := newTestApp(t, 2)
