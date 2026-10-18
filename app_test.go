@@ -132,7 +132,7 @@ func TestRemoveTimerAdjustsActive(t *testing.T) {
 	t.Run("removing before active shifts index down", func(t *testing.T) {
 		a := newTestApp(t, 3)
 		a.active = 2
-		a.removeTimer(0)
+		a.removeTimer(a.timers[0])
 		if a.active != 1 {
 			t.Errorf("active: got %d want 1", a.active)
 		}
@@ -141,18 +141,29 @@ func TestRemoveTimerAdjustsActive(t *testing.T) {
 		a := newTestApp(t, 3)
 		a.active = 1
 		a.running = true
-		a.removeTimer(1)
+		a.removeTimer(a.timers[1])
 		if a.active != -1 || a.running {
 			t.Errorf("active/running: got %d/%v want -1/false", a.active, a.running)
 		}
 	})
-	t.Run("out-of-range index is a no-op", func(t *testing.T) {
-		a := newTestApp(t, 2)
-		a.removeTimer(5)
-		if len(a.timers) != 2 {
-			t.Errorf("timers len: got %d want 2", len(a.timers))
-		}
-	})
+}
+
+// The confirmation modal is open while indices can shift, so removal must hit
+// the timer that was chosen, and a timer already gone must be left alone.
+func TestRemoveTimerByPointer(t *testing.T) {
+	a := newTestApp(t, 3)
+	first, second, third := a.timers[0], a.timers[1], a.timers[2]
+
+	a.removeTimer(first)
+	a.removeTimer(second)
+	if len(a.timers) != 1 || a.timers[0] != third {
+		t.Fatalf("after removing first and second: got %v want only third", a.timers)
+	}
+
+	a.removeTimer(second)
+	if len(a.timers) != 1 || a.timers[0] != third {
+		t.Errorf("stale pointer removed a timer: got %v want only third", a.timers)
+	}
 }
 
 func TestRename(t *testing.T) {
@@ -165,7 +176,7 @@ func TestRename(t *testing.T) {
 
 	// Renaming by pointer must be robust to concurrent index changes: after the
 	// timer before it is removed, the rename still targets the same timer.
-	a.removeTimer(0)
+	a.removeTimer(a.timers[0])
 	a.rename(target, "Still Me")
 	if a.timers[0].Name != "Still Me" {
 		t.Errorf("name after shift: got %q want %q", a.timers[0].Name, "Still Me")
