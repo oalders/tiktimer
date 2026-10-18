@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -189,16 +190,16 @@ func (a *App) logAndReset(target *Timer) {
 		return
 	}
 
-	// Warnings go first: a notification banner truncates long text, and they
-	// matter more than the path.
-	var msg string
+	// Warnings go first: a banner truncates long text, and the path is the
+	// least important part.
+	var parts []string
 	if !when.Equal(now) {
-		msg += backdatedNote(when) + "\n\n"
+		parts = append(parts, backdatedNote(when))
 	}
 	if !a.resetLogged(snap) {
-		msg += fmt.Sprintf("%q was removed while this dialog was open, so there was nothing to reset.\n\n", snap.name)
+		parts = append(parts, fmt.Sprintf("%q was removed while the dialog was open, so there was nothing to reset.", snap.name))
 	}
-	msg += logSuccessMessage(durStr, hoursStr, snap.name, logPath)
+	msg := strings.Join(append(parts, logSuccessMessage(durStr, hoursStr, snap.name, logPath)), "\n\n")
 	a.saveAsync()
 
 	// A notification rather than an alert: success needs no dismissing.
