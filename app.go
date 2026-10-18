@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -287,11 +288,14 @@ func (a *App) addTimer(name string) {
 	a.saveAsync()
 }
 
-func (a *App) removeTimer(index int) {
+// removeTimer deletes target if it still exists, identifying it by pointer
+// because the confirmation modal is open while indices can shift.
+func (a *App) removeTimer(target *Timer) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if index < 0 || index >= len(a.timers) {
+	index := slices.Index(a.timers, target)
+	if index < 0 {
 		return
 	}
 
