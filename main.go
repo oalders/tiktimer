@@ -189,17 +189,19 @@ func (a *App) logAndReset(target *Timer) {
 		return
 	}
 
-	msg := logSuccessMessage(durStr, hoursStr, snap.name, logPath)
+	// Warnings go first: a notification banner truncates long text, and they
+	// matter more than the path.
+	var msg string
 	if !when.Equal(now) {
-		msg += "\n\n" + backdatedNote(when)
+		msg += backdatedNote(when) + "\n\n"
 	}
 	if !a.resetLogged(snap) {
-		msg += fmt.Sprintf("\n\n%q was removed while this dialog was open, so there was nothing to reset.", snap.name)
+		msg += fmt.Sprintf("%q was removed while this dialog was open, so there was nothing to reset.\n\n", snap.name)
 	}
+	msg += logSuccessMessage(durStr, hoursStr, snap.name, logPath)
 	a.saveAsync()
 
-	// A notification rather than an alert: success needs no dismissing, but
-	// the path and any backdating note are still worth seeing.
+	// A notification rather than an alert: success needs no dismissing.
 	menuet.App().Notification(menuet.Notification{
 		Title:   "Logged",
 		Message: msg,
