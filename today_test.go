@@ -391,8 +391,11 @@ func TestTodaySnapshot(t *testing.T) {
 
 	// Stopped: the active timer reports exactly its accumulated time.
 	timers, _, target := a.todaySnapshot()
-	if len(timers) != 2 || timers[0].Elapsed != time.Hour || timers[1].Elapsed != 10*time.Minute || timers[1].Color != "Teal" {
+	if len(timers) != 2 || timers[0].Elapsed != time.Hour || timers[1].Elapsed != 10*time.Minute {
 		t.Fatalf("stopped: timers = %+v", timers)
+	}
+	if timers[1].Color != "Teal" {
+		t.Errorf("Color not carried into snapshot: %q", timers[1].Color)
 	}
 	if target != defaultDailyTarget {
 		t.Errorf("target = %v", target)

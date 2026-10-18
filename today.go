@@ -216,9 +216,9 @@ type projectTotal struct {
 	Logged   time.Duration
 	Unlogged time.Duration
 	Entries  int
-	// Color is the project's palette index, fixed by its position among all
-	// timers and logged names, so it does not shift as other projects come
-	// and go from the summary.
+	// Color is the project's palette index: the timer's chosen color, else
+	// fixed by its position among all timers and logged names, so it does
+	// not shift as other projects come and go from the summary.
 	Color int
 }
 
