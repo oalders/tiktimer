@@ -581,7 +581,7 @@ func TestLogTimestampJudgesDayWhenDialogOpened(t *testing.T) {
 	}
 }
 
-func TestTodayItemsAreReadOnly(t *testing.T) {
+func TestTodayItemsAreEnabled(t *testing.T) {
 	a := newTestApp(t, 1)
 	a.logPath = filepath.Join(t.TempDir(), "log.csv") // keep off the real iCloud log
 	a.timers[0].Accumulated = time.Hour               // enough for a project row
@@ -591,9 +591,10 @@ func TestTodayItemsAreReadOnly(t *testing.T) {
 	if len(items) != 3 {
 		t.Fatalf("got %d items want 3: %+v", len(items), items)
 	}
+	// A nil Clicked would make AppKit grey the item out (#18).
 	for _, it := range items {
-		if it.Clicked != nil || it.Children != nil {
-			t.Errorf("summary item %q is enabled", it.Text)
+		if it.Clicked == nil {
+			t.Errorf("summary item %q has no action, so it renders dimmed", it.Text)
 		}
 	}
 }

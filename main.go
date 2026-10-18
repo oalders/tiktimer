@@ -273,8 +273,8 @@ func askRemove(name string, elapsed time.Duration) bool {
 
 // todayItems builds the Today summary at the top of the menu: a headline,
 // the stacked day bar, and one row per project with a legend dot. Log files
-// are read without holding the mutex. The rows are information only, so they
-// have no action.
+// are read without holding the mutex. The rows are information only; their
+// click does nothing, but without it AppKit greys them out as disabled.
 func (a *App) todayItems() []menuet.MenuItem {
 	timers, logPath, target := a.todaySnapshot()
 	tl := readTodayLogged(logFilesToRead(logPath), time.Now())
@@ -285,16 +285,17 @@ func (a *App) todayItems() []menuet.MenuItem {
 		total += p.Total()
 	}
 	items := []menuet.MenuItem{
-		{Text: headlineText(total, target, tl), FontWeight: menuet.WeightBold},
-		{Image: renderDayBar(projects, target)},
+		{Text: headlineText(total, target, tl), FontWeight: menuet.WeightBold, Clicked: func() {}},
+		{Image: renderDayBar(projects, target), Clicked: func() {}},
 	}
 	for _, p := range projects {
 		if !p.ShowRow() {
 			continue
 		}
 		items = append(items, menuet.MenuItem{
-			Text:  rowText(p),
-			Image: renderSwatch(p.Color),
+			Text:    rowText(p),
+			Image:   renderSwatch(p.Color),
+			Clicked: func() {},
 		})
 	}
 	return items
