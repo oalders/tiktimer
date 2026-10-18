@@ -592,8 +592,8 @@ func TestTodayItemsAreReadOnly(t *testing.T) {
 		t.Fatalf("got %d items want 4: %+v", len(items), items)
 	}
 	for _, it := range items[:len(items)-1] {
-		if it.Clicked != nil {
-			t.Errorf("summary item %q is clickable", it.Text)
+		if it.Clicked != nil || it.Children != nil {
+			t.Errorf("summary item %q is enabled", it.Text)
 		}
 	}
 	if last := items[len(items)-1]; last.Text != "Show Log in Finder" || last.Clicked == nil {

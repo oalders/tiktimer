@@ -161,6 +161,8 @@ rest of the menu as today.
   pixel has the project color, and that the track shows past total < target;
   the over-target case draws the tick.
 - `dailyTargetHours` save/load round trip and the default of 8.
+- `todayItems`: every summary row has no action, and the last item is a
+  clickable Show Log in Finder.
 
 ## Out of scope
 
@@ -195,8 +197,7 @@ rest of the menu as today.
 - **Headline math:** remaining time is computed from the truncated total.
   "target reached" applies when `|target − total| < 1m`. The target is shown
   compactly (`8h`, `7h 30m`). The target dialog accepts `7,5` as well as `7.5`.
-- **Accepted:** summary items get the accent highlight on hover. Renaming a
-  timer mid-day splits its time into two rows.
+- **Accepted:** renaming a timer mid-day splits its time into two rows.
 - **Sub-minute timer time is hidden:** a row mentions unlogged time only at
   ≥ 1m, and a project with no entries and under a minute on its timer is
   left out. It still counts toward the headline total and the bar.
