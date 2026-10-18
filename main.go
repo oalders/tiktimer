@@ -348,14 +348,36 @@ func (a *App) setDailyTargetPrompt() {
 	a.setDailyTarget(d)
 }
 
+// toggleWithSound starts or stops the active timer and plays the matching cue.
+func (a *App) toggleWithSound() {
+	running, ok := a.toggleActive()
+	a.updateTitle()
+	if ok {
+		go exec.Command("afplay", soundForRunning(running)).Run()
+	}
+}
+
 func (a *App) menuItems() []menuet.MenuItem {
 	// Built before locking: it snapshots state under the mutex itself and then
 	// reads the log files unlocked.
-	items := a.todayItems()
-	items = append(items, menuet.MenuItem{Type: menuet.Separator})
+	today := a.todayItems()
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
+	var items []menuet.MenuItem
+	if a.active >= 0 && a.active < len(a.timers) {
+		items = append(items,
+			menuet.MenuItem{
+				Text:       toggleItemText(a.timers[a.active].Name, a.running),
+				FontWeight: menuet.WeightBold,
+				Clicked:    a.toggleWithSound,
+			},
+			menuet.MenuItem{Type: menuet.Separator},
+		)
+	}
+	items = append(items, today...)
+	items = append(items, menuet.MenuItem{Type: menuet.Separator})
 
 	for i, t := range a.timers {
 		idx := i
@@ -527,13 +549,9 @@ func main() {
 
 	menuet.App().Label = "com.github.oalders.tiktimer"
 	menuet.App().Children = app.menuItems
-	menuet.App().StatusItemClicked = func() {
-		running, ok := app.toggleActive()
-		app.updateTitle()
-		if ok {
-			go exec.Command("afplay", soundForRunning(running)).Run()
-		}
-	}
+	// Click opens the menu; Option+click toggles the timer. Toggling takes a
+	// deliberate gesture so a stray click can't stop a billing timer unnoticed.
+	menuet.App().StatusItemOptionClicked = app.toggleWithSound
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
