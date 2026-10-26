@@ -885,7 +885,7 @@ func TestSaveIsOwnerOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := info.Mode().Perm(); got != 0o600 {
-		t.Errorf("save file mode = %v, want 0600", got)
+		t.Errorf("save file mode = %#o, want 0600", got)
 	}
 }
 
