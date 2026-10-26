@@ -26,6 +26,9 @@ type Timer struct {
 	// Color names the projectPalette entry for this timer in the Today
 	// summary. Empty means the color its position gives it.
 	Color string `json:"color,omitempty"`
+	// ExcludeFromToday leaves this timer's time out of the Today total; it
+	// still gets its own row and bar segment.
+	ExcludeFromToday bool `json:"excludeFromToday,omitempty"`
 }
 
 type DisplayMode string
@@ -257,31 +260,18 @@ func (a *App) resumeAfterWake() {
 // togglePauseOnSleep flips a timer's PauseOnSleep opt-in. Identified by pointer,
 // matching the other snapshot mutators.
 func (a *App) togglePauseOnSleep(target *Timer) {
-	a.mu.Lock()
-	for _, t := range a.timers {
-		if t == target {
-			t.PauseOnSleep = !t.PauseOnSleep
-			break
-		}
-	}
-	a.mu.Unlock()
+	a.updateTimer(target, func(t *Timer) { t.PauseOnSleep = !t.PauseOnSleep })
+}
 
-	a.saveAsync()
+// toggleExcludeFromToday flips whether a timer counts toward the Today total.
+func (a *App) toggleExcludeFromToday(target *Timer) {
+	a.updateTimer(target, func(t *Timer) { t.ExcludeFromToday = !t.ExcludeFromToday })
 }
 
 // setColor sets a timer's palette color by name; "" returns it to the color
 // its position gives it.
 func (a *App) setColor(target *Timer, name string) {
-	a.mu.Lock()
-	for _, t := range a.timers {
-		if t == target {
-			t.Color = name
-			break
-		}
-	}
-	a.mu.Unlock()
-
-	a.saveAsync()
+	a.updateTimer(target, func(t *Timer) { t.Color = name })
 }
 
 func (a *App) switchTo(index int) {
@@ -357,10 +347,16 @@ func (a *App) removeTimer(target *Timer) {
 // concurrent switchTo/removeTimer while the rename modal is open cannot cause
 // the wrong timer to be renamed.
 func (a *App) rename(target *Timer, name string) {
+	a.updateTimer(target, func(t *Timer) { t.Name = name })
+}
+
+// updateTimer applies change to target under the mutex if it still exists,
+// then saves.
+func (a *App) updateTimer(target *Timer, change func(*Timer)) {
 	a.mu.Lock()
 	for _, t := range a.timers {
 		if t == target {
-			t.Name = name
+			change(t)
 			break
 		}
 	}
@@ -514,7 +510,7 @@ func (a *App) todaySnapshot() (timers []timerTime, logPath string, target time.D
 			// timer stays in the list so palette colors do not shift.
 			acc = 0
 		}
-		timers = append(timers, timerTime{Name: t.Name, Elapsed: acc, Color: t.Color})
+		timers = append(timers, timerTime{Name: t.Name, Elapsed: acc, Color: t.Color, Excluded: t.ExcludeFromToday})
 	}
 	return timers, a.logPath, a.targetLocked()
 }

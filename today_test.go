@@ -199,6 +199,23 @@ func TestBuildDaySummaryChosenColor(t *testing.T) {
 	}
 }
 
+func TestBuildDaySummaryExcluded(t *testing.T) {
+	timers := []timerTime{{Name: "Acme", Elapsed: time.Hour}, {Name: "Blog", Elapsed: 30 * time.Minute, Excluded: true}}
+	tl := todayLog{
+		logged: map[string]time.Duration{"Blog": time.Hour, "Old Name": 2 * time.Hour},
+		counts: map[string]int{"Blog": 1, "Old Name": 1},
+		order:  []string{"Blog", "Old Name"},
+	}
+	got := buildDaySummary(timers, tl)
+	// Blog keeps its row, logged time included; the CSV-only name still counts.
+	if len(got) != 3 || !got[1].Excluded || got[1].Total() != 90*time.Minute || got[2].Excluded {
+		t.Fatalf("got %+v", got)
+	}
+	if counted, excluded := dayTotals(got); counted != 3*time.Hour || excluded != 90*time.Minute {
+		t.Errorf("dayTotals = %v, %v want 3h, 1h30m", counted, excluded)
+	}
+}
+
 func TestBuildDaySummaryTimerOnly(t *testing.T) {
 	timers := []timerTime{{Name: "Acme", Elapsed: time.Minute}, {Name: "Blip", Elapsed: 59 * time.Second}}
 	got := buildDaySummary(timers, readTodayLogged(nil, time.Now()))
@@ -261,6 +278,8 @@ func TestRowText(t *testing.T) {
 		{projectTotal{Name: "Globex", Logged: 30 * time.Minute, Entries: 1}, "Globex  0h 30m  (1 entry)"},
 		{projectTotal{Name: "New", Unlogged: 90 * time.Minute}, "New  1h 30m  (1h 30m unlogged)"},
 		{projectTotal{Name: "Acme", Logged: time.Hour, Unlogged: 10 * time.Second, Entries: 2}, "Acme  1h 00m  (2 entries)"},
+		{projectTotal{Name: "Blog", Unlogged: 30 * time.Minute, Excluded: true}, "Blog  0h 30m  (30m unlogged, not counted)"},
+		{projectTotal{Name: "Blog", Unlogged: 10 * time.Second, Excluded: true}, "Blog  0h 00m  (not counted)"},
 	}
 	for _, c := range cases {
 		if got := rowText(c.p); got != c.want {
@@ -348,8 +367,42 @@ func TestRenderDayBarOverTargetDrawsTick(t *testing.T) {
 	}
 }
 
+func TestRenderDayBarExcludedPastTarget(t *testing.T) {
+	// Scale 8h + 2h: counted Acme fills 0–20%, track to the target at 80%,
+	// then Blog's excluded 2h, hatched, fills 80–100%.
+	projects := []projectTotal{
+		{Name: "Blog", Logged: 2 * time.Hour, Color: 1, Excluded: true},
+		{Name: "Acme", Logged: 2 * time.Hour},
+	}
+	_, img := decodeDataURI(t, renderDayBar(projects, 8*time.Hour))
+	midY := (barTop + barBot) / 2
+	span := barRight - barLeft
+	x := func(frac float64) int { return barLeft + int(frac*float64(span)) }
+	alpha := func(x int) uint32 { _, _, _, a := img.At(x, midY).RGBA(); return a }
+	if alpha(x(0.10)) != 0xFFFF || alpha(x(0.50)) != uint32(trackColor.A)*0x101 {
+		t.Errorf("want Acme then track before the target, alphas %x %x", alpha(x(0.10)), alpha(x(0.50)))
+	}
+	stripe := x(0.90)
+	for hatched(stripe, midY) {
+		stripe++
+	}
+	r, g, b, _ := img.At(stripe, midY).RGBA()
+	if c := paletteColor(1); r>>8 != uint32(c.R) || g>>8 != uint32(c.G) || b>>8 != uint32(c.B) {
+		t.Errorf("excluded stripe at x=%d = %x %x %x, want %v", stripe, r, g, b, c)
+	}
+	for !hatched(stripe, midY) {
+		stripe++
+	}
+	if a := alpha(stripe); a != uint32(trackColor.A)*0x101 {
+		t.Errorf("hatch gap at x=%d alpha %x, want track", stripe, a)
+	}
+	if _, _, _, a := img.At(x(0.80), barTop-3).RGBA(); a != 0xFFFF {
+		t.Errorf("expected target tick above the bar at x=%d", x(0.80))
+	}
+}
+
 func TestRenderSwatch(t *testing.T) {
-	_, img := decodeDataURI(t, renderSwatch(1))
+	_, img := decodeDataURI(t, renderSwatch(1, false))
 	if b := img.Bounds(); b.Dx() != swatchSize || b.Dy() != swatchSize {
 		t.Errorf("size = %v", b)
 	}
@@ -386,6 +439,7 @@ func TestTodaySnapshot(t *testing.T) {
 	a.timers[0].Accumulated = time.Hour
 	a.timers[1].Accumulated = 10 * time.Minute
 	a.timers[1].Color = "Teal"
+	a.timers[1].ExcludeFromToday = true
 	a.active = 1
 	a.lastTick = time.Now().Add(-time.Minute)
 
@@ -394,8 +448,8 @@ func TestTodaySnapshot(t *testing.T) {
 	if len(timers) != 2 || timers[0].Elapsed != time.Hour || timers[1].Elapsed != 10*time.Minute {
 		t.Fatalf("stopped: timers = %+v", timers)
 	}
-	if timers[1].Color != "Teal" {
-		t.Errorf("Color not carried into snapshot: %q", timers[1].Color)
+	if timers[1].Color != "Teal" || !timers[1].Excluded || timers[0].Excluded {
+		t.Errorf("Color or Excluded not carried into snapshot: %+v", timers)
 	}
 	if target != defaultDailyTarget {
 		t.Errorf("target = %v", target)

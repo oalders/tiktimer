@@ -213,7 +213,7 @@ func TestMenuItemsTimerSubmenus(t *testing.T) {
 					t.Errorf("%s: blank child Type %v want Separator", name, c.Type)
 				}
 			}
-			want := []string{"Switch To", "Rename…", "Set Time…", "Log & Reset…", "Pause on Sleep", "Colour", "", "Remove…"}
+			want := []string{"Switch To", "Rename…", "Set Time…", "Log & Reset…", "Pause on Sleep", "Count Toward Today", "Colour", "", "Remove…"}
 			if !slices.Equal(texts, want) {
 				t.Errorf("%s: children %q want %q", name, texts, want)
 			}
@@ -281,6 +281,21 @@ func TestMenuItemsTimerSubmenus(t *testing.T) {
 		}
 		if a.timers[0].PauseOnSleep {
 			t.Error("Acme's PauseOnSleep changed")
+		}
+	})
+
+	t.Run("Count Toward Today toggles only its own timer", func(t *testing.T) {
+		a := newMenuApp(t)
+		ct := child(t, row(t, a.menuItems(), "Beta"), "Count Toward Today")
+		if !ct.State {
+			t.Error("State false want true by default")
+		}
+		ct.Clicked()
+		if !a.timers[1].ExcludeFromToday || a.timers[0].ExcludeFromToday {
+			t.Errorf("ExcludeFromToday %v, %v want false, true", a.timers[0].ExcludeFromToday, a.timers[1].ExcludeFromToday)
+		}
+		if child(t, row(t, a.menuItems(), "Beta"), "Count Toward Today").State {
+			t.Error("checkmark still shown after excluding")
 		}
 	})
 
@@ -860,7 +875,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 
 	a := newApp()
 	a.home = dir
-	a.timers = []*Timer{{Name: "A", Accumulated: time.Minute, PauseOnSleep: true}, {Name: "B", Color: "Teal"}}
+	a.timers = []*Timer{{Name: "A", Accumulated: time.Minute, PauseOnSleep: true}, {Name: "B", Color: "Teal", ExcludeFromToday: true}}
 	a.active = 1
 	a.display = DisplayOdometer
 	a.logPath = "/custom/log.csv"
@@ -877,6 +892,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if loaded.timers[0].Color != "" || loaded.timers[1].Color != "Teal" {
 		t.Errorf("Color not restored: got %q/%q want \"\"/Teal", loaded.timers[0].Color, loaded.timers[1].Color)
+	}
+	if loaded.timers[0].ExcludeFromToday || !loaded.timers[1].ExcludeFromToday {
+		t.Errorf("ExcludeFromToday not restored: got %v/%v want false/true", loaded.timers[0].ExcludeFromToday, loaded.timers[1].ExcludeFromToday)
 	}
 	if loaded.active != 1 || loaded.display != DisplayOdometer || loaded.logPath != "/custom/log.csv" {
 		t.Errorf("scalar fields not restored: active=%d display=%q logPath=%q", loaded.active, loaded.display, loaded.logPath)

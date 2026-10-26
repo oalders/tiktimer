@@ -220,27 +220,44 @@ type projectTotal struct {
 	// fixed by its position among all timers and logged names, so it does
 	// not shift as other projects come and go from the summary.
 	Color int
+	// Excluded marks a timer set not to count toward the Today total.
+	Excluded bool
 }
 
 func (p projectTotal) Total() time.Duration { return p.Logged + p.Unlogged }
+
+// dayTotals splits the projects' time into what counts toward the Today
+// total and what is excluded from it.
+func dayTotals(projects []projectTotal) (counted, excluded time.Duration) {
+	for _, p := range projects {
+		if p.Excluded {
+			excluded += p.Total()
+		} else {
+			counted += p.Total()
+		}
+	}
+	return counted, excluded
+}
 
 // ShowRow reports whether the project gets its own row. Under a minute of
 // timer time with nothing logged is noise; it still counts toward the
 // headline total and the bar.
 func (p projectTotal) ShowRow() bool { return p.Entries > 0 || p.Unlogged >= time.Minute }
 
-// timerTime is a timer's name, its current (not yet logged) elapsed time and
-// its chosen palette color name, if any.
+// timerTime is a timer's name, its current (not yet logged) elapsed time, its
+// chosen palette color name, if any, and whether it is left out of the total.
 type timerTime struct {
-	Name    string
-	Elapsed time.Duration
-	Color   string
+	Name     string
+	Elapsed  time.Duration
+	Color    string
+	Excluded bool
 }
 
 // buildDaySummary merges timer time with today's logged time, keyed by name.
 // Timer order comes first, then CSV-only names (renamed or removed timers) in
 // order of first appearance, so each project's palette color stays stable
-// through the day. A timer's chosen color overrides its position. Projects
+// through the day. A timer's chosen color overrides its position, and its
+// exclusion covers its logged time too; CSV-only names always count. Projects
 // with no time at all are omitted.
 func buildDaySummary(timers []timerTime, tl todayLog) []projectTotal {
 	byName := map[string]*projectTotal{}
@@ -259,6 +276,7 @@ func buildDaySummary(timers []timerTime, tl todayLog) []projectTotal {
 		if c := paletteIndex(t.Color); c >= 0 {
 			p.Color = c
 		}
+		p.Excluded = t.Excluded
 		if t.Elapsed > 0 {
 			p.Unlogged += t.Elapsed
 		}
@@ -325,7 +343,7 @@ func headlineText(total, target time.Duration, tl todayLog) string {
 }
 
 // rowText is a project row: "Acme  4h 50m  (5 entries, 23m unlogged)". The
-// total includes the unlogged timer time.
+// total includes the unlogged timer time; an excluded project says so last.
 func rowText(p projectTotal) string {
 	var parts []string
 	switch {
@@ -337,6 +355,9 @@ func rowText(p projectTotal) string {
 	// Under a minute of timer time is noise next to hours of logged work.
 	if p.Unlogged >= time.Minute {
 		parts = append(parts, formatCompact(p.Unlogged)+" unlogged")
+	}
+	if p.Excluded {
+		parts = append(parts, "not counted")
 	}
 	s := fmt.Sprintf("%s  %s", p.Name, formatHM(p.Total()))
 	if len(parts) > 0 {

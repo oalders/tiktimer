@@ -232,3 +232,11 @@ rest of the menu as today.
   timer restarted this morning while still holding yesterday's leftover
   counts and logs entirely as today (use Log & Reset as Yesterday, or log the
   leftover before starting it).
+- **Timers left out of the total (#22):** a timer's **Count Toward Today**
+  checkmark (on by default) saves `excludeFromToday` when cleared. Its time,
+  logged rows under its name included, then stays out of the headline total
+  but keeps its row, marked `not counted` last in the parenthetical. In the
+  bar, counted projects fill from the left as before; excluded ones are
+  hatched and start at `max(target, counted)`, on a scale of that plus the
+  excluded time, so they always sit past the target tick. Their legend dot is
+  hatched to match. CSV-only names have no setting and always count.
