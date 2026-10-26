@@ -117,7 +117,8 @@ func renderDayBar(projects []projectTotal, target time.Duration) string {
 	if scale > 0 {
 		var acc time.Duration
 		paint := func(d time.Duration, c color.NRGBA, h bool) {
-			from := int(float64(acc) / float64(scale) * float64(span))
+			// A corrupt log can overflow the totals negative.
+			from := max(0, int(float64(acc)/float64(scale)*float64(span)))
 			acc += d
 			to := int(float64(acc) / float64(scale) * float64(span))
 			for x := from; x < to && x < span; x++ {

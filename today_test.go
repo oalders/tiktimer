@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -442,6 +443,14 @@ func TestRenderDayBarExcludedPastTarget(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRenderDayBarNegativeLoggedDoesNotPanic(t *testing.T) {
+	// Summing many bounded rows under one name can overflow Logged negative.
+	projects := []projectTotal{
+		{Name: "Acme", Logged: math.MinInt64 / 2, Unlogged: time.Hour},
+	}
+	decodeDataURI(t, renderDayBar(projects, 8*time.Hour))
 }
 
 func TestRenderSwatch(t *testing.T) {
