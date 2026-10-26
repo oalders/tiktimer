@@ -291,7 +291,7 @@ func TestRowText(t *testing.T) {
 		{projectTotal{Name: "New", Unlogged: 90 * time.Minute}, "New  1h 30m  (1h 30m unlogged)"},
 		{projectTotal{Name: "Acme", Logged: time.Hour, Unlogged: 10 * time.Second, Entries: 2}, "Acme  1h 00m  (2 entries)"},
 		{projectTotal{Name: "Blog", Unlogged: 30 * time.Minute, Excluded: true}, "Blog  0h 30m  (30m unlogged, not counted)"},
-		{projectTotal{Name: "Blog", Unlogged: 10 * time.Second, Excluded: true}, "Blog  0h 00m  (not counted)"},
+		{projectTotal{Name: "Blog", Logged: 30 * time.Second, Entries: 1, Excluded: true}, "Blog  0h 00m  (1 entry, not counted)"},
 	}
 	for _, c := range cases {
 		if got := rowText(c.p); got != c.want {
@@ -380,41 +380,62 @@ func TestRenderDayBarOverTargetDrawsTick(t *testing.T) {
 }
 
 func TestRenderDayBarExcludedPastTarget(t *testing.T) {
-	// Scale 8h + 2h: counted Acme fills 0–20%, track to the target at 80%,
-	// then Blog's excluded 2h, hatched, fills 80–100%.
-	projects := []projectTotal{
-		{Name: "Blog", Logged: 2 * time.Hour, Color: 1, Excluded: true},
-		{Name: "Acme", Logged: 2 * time.Hour},
+	cases := []struct {
+		name     string
+		projects []projectTotal
+		// Fractions of the span: the target tick, a pixel of plain counted
+		// color, a track pixel (0 for none) and a pixel in the excluded segment.
+		tick, counted, track, excluded float64
+	}{
+		// Scale 8h + 2h: Acme 0–20%, track to the target at 80%, Blog 80–100%.
+		{"under target", []projectTotal{
+			{Name: "Blog", Logged: 2 * time.Hour, Color: 1, Excluded: true},
+			{Name: "Acme", Logged: 2 * time.Hour},
+		}, 0.80, 0.10, 0.50, 0.90},
+		// Scale 10h + 2h: Acme runs past the tick at 8/12 to 10/12, then Blog.
+		{"over target", []projectTotal{
+			{Name: "Acme", Logged: 10 * time.Hour},
+			{Name: "Blog", Logged: 2 * time.Hour, Color: 1, Excluded: true},
+		}, 8.0 / 12, 9.0 / 12, 0, 11.0 / 12},
 	}
-	_, img := decodeDataURI(t, renderDayBar(projects, 8*time.Hour))
-	midY := (barTop + barBot) / 2
-	span := barRight - barLeft
-	x := func(frac float64) int { return barLeft + int(frac*float64(span)) }
-	alpha := func(x int) uint32 { _, _, _, a := img.At(x, midY).RGBA(); return a }
-	if alpha(x(0.10)) != 0xFFFF || alpha(x(0.50)) != uint32(trackColor.A)*0x101 {
-		t.Errorf("want Acme then track before the target, alphas %x %x", alpha(x(0.10)), alpha(x(0.50)))
-	}
-	// Scan a few pixels for a colored stripe, then for a track-colored gap.
-	stripe := x(0.90)
-	for end := stripe + 8; hatched(stripe, midY); stripe++ {
-		if stripe == end {
-			t.Fatal("no colored stripe found in the excluded segment")
-		}
-	}
-	r, g, b, _ := img.At(stripe, midY).RGBA()
-	if c := paletteColor(1); r>>8 != uint32(c.R) || g>>8 != uint32(c.G) || b>>8 != uint32(c.B) {
-		t.Errorf("excluded stripe at x=%d = %x %x %x, want %v", stripe, r, g, b, c)
-	}
-	for end := stripe + 8; !hatched(stripe, midY); stripe++ {
-		if stripe == end {
-			t.Fatal("no hatch gap found in the excluded segment")
-		}
-	}
-	if a := alpha(stripe); a != uint32(trackColor.A)*0x101 {
-		t.Errorf("hatch gap at x=%d alpha %x, want track", stripe, a)
-	}
-	if _, _, _, a := img.At(x(0.80), barTop-3).RGBA(); a != 0xFFFF {
-		t.Errorf("expected target tick above the bar at x=%d", x(0.80))
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, img := decodeDataURI(t, renderDayBar(c.projects, 8*time.Hour))
+			midY := (barTop + barBot) / 2
+			span := barRight - barLeft
+			x := func(frac float64) int { return barLeft + int(frac*float64(span)) }
+			at := func(x int) color.NRGBA { return color.NRGBAModel.Convert(img.At(x, midY)).(color.NRGBA) }
+			// Eight pixels cover a stripe and a gap, so none may be hatched.
+			for px := x(c.counted); px < x(c.counted)+8; px++ {
+				if got := at(px); got != paletteColor(0) {
+					t.Fatalf("counted pixel at x=%d = %v, want %v", px, got, paletteColor(0))
+				}
+			}
+			if c.track > 0 && at(x(c.track)) != trackColor {
+				t.Errorf("pixel at x=%d = %v, want track before the target", x(c.track), at(x(c.track)))
+			}
+			// Scan a few pixels for a colored stripe, then for a track-colored gap.
+			stripe := x(c.excluded)
+			for end := stripe + 8; hatched(stripe, midY); stripe++ {
+				if stripe == end {
+					t.Fatal("no colored stripe found in the excluded segment")
+				}
+			}
+			if got := at(stripe); got != paletteColor(1) {
+				t.Errorf("excluded stripe at x=%d = %v, want %v", stripe, got, paletteColor(1))
+			}
+			for end := stripe + 8; !hatched(stripe, midY); stripe++ {
+				if stripe == end {
+					t.Fatal("no hatch gap found in the excluded segment")
+				}
+			}
+			if got := at(stripe); got != trackColor {
+				t.Errorf("hatch gap at x=%d = %v, want track", stripe, got)
+			}
+			if _, _, _, a := img.At(x(c.tick), barTop-3).RGBA(); a != 0xFFFF {
+				t.Errorf("expected target tick above the bar at x=%d", x(c.tick))
+			}
+		})
 	}
 }
 
@@ -721,5 +742,14 @@ func TestTodayItemsHeadlineLeavesOutExcluded(t *testing.T) {
 	}
 	if !strings.Contains(items[3].Text, "not counted") {
 		t.Errorf("excluded row %q does not say \"not counted\"", items[3].Text)
+	}
+	// Each legend dot is hatched only for the excluded project.
+	timers, _, _ := a.todaySnapshot()
+	projects := buildDaySummary(timers, todayLog{})
+	if items[2].Image != renderSwatch(projects[0].Color, false) {
+		t.Error("counted row's swatch is not the plain dot")
+	}
+	if items[3].Image != renderSwatch(projects[1].Color, true) {
+		t.Error("excluded row's swatch is not hatched")
 	}
 }
