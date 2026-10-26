@@ -342,16 +342,15 @@ func (a *App) removeTimer(target *Timer) {
 	a.saveAsync()
 }
 
-// rename sets target's name if it still exists. Like the other snapshot
-// mutators it identifies the timer by pointer rather than index, so a
-// concurrent switchTo/removeTimer while the rename modal is open cannot cause
-// the wrong timer to be renamed.
+// rename sets target's name if it still exists.
 func (a *App) rename(target *Timer, name string) {
 	a.updateTimer(target, func(t *Timer) { t.Name = name })
 }
 
 // updateTimer applies change to target under the mutex if it still exists,
-// then saves.
+// then saves. Like the other snapshot mutators it identifies the timer by
+// pointer rather than index, so a concurrent switchTo/removeTimer while a
+// modal is open cannot cause the wrong timer to be changed.
 func (a *App) updateTimer(target *Timer, change func(*Timer)) {
 	a.mu.Lock()
 	for _, t := range a.timers {

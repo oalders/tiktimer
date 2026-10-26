@@ -240,8 +240,8 @@ func dayTotals(projects []projectTotal) (counted, excluded time.Duration) {
 }
 
 // ShowRow reports whether the project gets its own row. Under a minute of
-// timer time with nothing logged is noise; it still counts toward the
-// headline total and the bar.
+// timer time with nothing logged is noise; it still counts toward the totals
+// and the bar.
 func (p projectTotal) ShowRow() bool { return p.Entries > 0 || p.Unlogged >= time.Minute }
 
 // timerTime is a timer's name, its current (not yet logged) elapsed time, its
@@ -257,7 +257,8 @@ type timerTime struct {
 // Timer order comes first, then CSV-only names (renamed or removed timers) in
 // order of first appearance, so each project's palette color stays stable
 // through the day. A timer's chosen color overrides its position, and its
-// exclusion covers its logged time too; CSV-only names always count. Projects
+// exclusion covers its logged time too (any same-named timer's exclusion
+// wins); CSV-only names always count. Projects
 // with no time at all are omitted.
 func buildDaySummary(timers []timerTime, tl todayLog) []projectTotal {
 	byName := map[string]*projectTotal{}
@@ -276,7 +277,7 @@ func buildDaySummary(timers []timerTime, tl todayLog) []projectTotal {
 		if c := paletteIndex(t.Color); c >= 0 {
 			p.Color = c
 		}
-		p.Excluded = t.Excluded
+		p.Excluded = p.Excluded || t.Excluded
 		if t.Elapsed > 0 {
 			p.Unlogged += t.Elapsed
 		}

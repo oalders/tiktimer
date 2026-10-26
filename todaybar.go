@@ -191,7 +191,7 @@ func renderSwatch(i int, hatch bool) string {
 				if hatch && hatched(px, py) {
 					cc = trackColor
 				}
-				cc.A = uint8(float64(c.A) * float64(inside) / (n * n))
+				cc.A = uint8(float64(cc.A) * float64(inside) / (n * n))
 				img.SetNRGBA(px, py, cc)
 			}
 		}

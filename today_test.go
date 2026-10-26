@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"image"
+	"image/color"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -207,12 +208,23 @@ func TestBuildDaySummaryExcluded(t *testing.T) {
 		order:  []string{"Blog", "Old Name"},
 	}
 	got := buildDaySummary(timers, tl)
-	// Blog keeps its row, logged time included; the CSV-only name still counts.
-	if len(got) != 3 || !got[1].Excluded || got[1].Total() != 90*time.Minute || got[2].Excluded {
-		t.Fatalf("got %+v", got)
+	if len(got) != 3 {
+		t.Fatalf("got %d projects want 3: %+v", len(got), got)
+	}
+	if !got[1].Excluded || got[1].Total() != 90*time.Minute {
+		t.Errorf("Blog = %+v, want excluded with its logged time, 1h30m", got[1])
+	}
+	if got[2].Excluded {
+		t.Errorf("CSV-only Old Name is excluded; it has no setting and should count")
 	}
 	if counted, excluded := dayTotals(got); counted != 3*time.Hour || excluded != 90*time.Minute {
 		t.Errorf("dayTotals = %v, %v want 3h, 1h30m", counted, excluded)
+	}
+
+	// Same-named timers merge into one project; either's exclusion wins.
+	dup := buildDaySummary([]timerTime{{Name: "Blog", Elapsed: time.Hour, Excluded: true}, {Name: "Blog", Elapsed: time.Hour}}, todayLog{})
+	if len(dup) != 1 || !dup[0].Excluded {
+		t.Errorf("merged Blog = %+v, want one excluded project", dup)
 	}
 }
 
@@ -382,16 +394,21 @@ func TestRenderDayBarExcludedPastTarget(t *testing.T) {
 	if alpha(x(0.10)) != 0xFFFF || alpha(x(0.50)) != uint32(trackColor.A)*0x101 {
 		t.Errorf("want Acme then track before the target, alphas %x %x", alpha(x(0.10)), alpha(x(0.50)))
 	}
+	// Scan a few pixels for a colored stripe, then for a track-colored gap.
 	stripe := x(0.90)
-	for hatched(stripe, midY) {
-		stripe++
+	for end := stripe + 8; hatched(stripe, midY); stripe++ {
+		if stripe == end {
+			t.Fatal("no colored stripe found in the excluded segment")
+		}
 	}
 	r, g, b, _ := img.At(stripe, midY).RGBA()
 	if c := paletteColor(1); r>>8 != uint32(c.R) || g>>8 != uint32(c.G) || b>>8 != uint32(c.B) {
 		t.Errorf("excluded stripe at x=%d = %x %x %x, want %v", stripe, r, g, b, c)
 	}
-	for !hatched(stripe, midY) {
-		stripe++
+	for end := stripe + 8; !hatched(stripe, midY); stripe++ {
+		if stripe == end {
+			t.Fatal("no hatch gap found in the excluded segment")
+		}
 	}
 	if a := alpha(stripe); a != uint32(trackColor.A)*0x101 {
 		t.Errorf("hatch gap at x=%d alpha %x, want track", stripe, a)
@@ -413,6 +430,23 @@ func TestRenderSwatch(t *testing.T) {
 	}
 	if _, _, _, a := img.At(0, 0).RGBA(); a != 0 {
 		t.Errorf("corner should be transparent")
+	}
+}
+
+func TestRenderSwatchHatched(t *testing.T) {
+	_, img := decodeDataURI(t, renderSwatch(1, true))
+	at := func(x, y int) color.NRGBA { return color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA) }
+	// Both pixels are well inside the dot, so fully covered: the center is
+	// off the hatching, 4px below it is on a stripe.
+	mid := swatchSize / 2
+	if !hatched(mid, mid+4) || hatched(mid, mid) {
+		t.Fatal("test pixels no longer straddle a stripe")
+	}
+	if got := at(mid, mid+4); got != trackColor {
+		t.Errorf("stripe pixel = %v, want trackColor %v", got, trackColor)
+	}
+	if got := at(mid, mid); got != paletteColor(1) {
+		t.Errorf("non-stripe pixel = %v, want %v", got, paletteColor(1))
 	}
 }
 
@@ -667,5 +701,25 @@ func TestTodayItemsAreEnabled(t *testing.T) {
 		if it.Clicked == nil {
 			t.Errorf("summary item %q has no action, so it renders dimmed", it.Text)
 		}
+	}
+}
+
+func TestTodayItemsHeadlineLeavesOutExcluded(t *testing.T) {
+	a := newTestApp(t, 2)
+	a.logPath = filepath.Join(t.TempDir(), "log.csv") // keep off the real iCloud log
+	a.timers[0].Name, a.timers[1].Name = "Acme", "Blog"
+	a.timers[0].Accumulated = time.Hour
+	a.timers[1].Accumulated = 2 * time.Hour
+	a.timers[1].ExcludeFromToday = true
+
+	items := a.todayItems()
+	if len(items) != 4 {
+		t.Fatalf("got %d items want 4: %+v", len(items), items)
+	}
+	if want := headlineText(time.Hour, a.dailyTargetValue(), todayLog{}); items[0].Text != want {
+		t.Errorf("headline %q want %q", items[0].Text, want)
+	}
+	if !strings.Contains(items[3].Text, "not counted") {
+		t.Errorf("excluded row %q does not say \"not counted\"", items[3].Text)
 	}
 }
