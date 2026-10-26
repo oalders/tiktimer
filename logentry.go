@@ -136,18 +136,20 @@ func resolveLogPath(configPath string) string {
 	return defaultLogPath()
 }
 
+// maxHMSHours bounds hours so a corrupt row cannot overflow time.Duration.
+const maxHMSHours = 9999
+
 // parseHMS parses an "HH:MM:SS" duration string of the form produced by
-// formatEntryFields (hours may be any number of digits; minutes and seconds
-// must be 0-59). Surrounding whitespace is ignored. It returns an error rather
-// than a best-effort value so a mistyped edit is rejected before anything is
-// logged.
+// formatEntryFields (hours must be 0-9999; minutes and seconds must be 0-59).
+// Surrounding whitespace is ignored. It returns an error rather than a
+// best-effort value so a mistyped edit is rejected before anything is logged.
 func parseHMS(s string) (time.Duration, error) {
 	parts := strings.Split(strings.TrimSpace(s), ":")
 	if len(parts) != 3 {
 		return 0, fmt.Errorf("expected HH:MM:SS, got %q", s)
 	}
 	h, err := strconv.Atoi(strings.TrimSpace(parts[0]))
-	if err != nil || h < 0 {
+	if err != nil || h < 0 || h > maxHMSHours {
 		return 0, fmt.Errorf("invalid hours in %q", s)
 	}
 	m, err := strconv.Atoi(strings.TrimSpace(parts[1]))
