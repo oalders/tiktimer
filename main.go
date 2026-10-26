@@ -281,7 +281,7 @@ func colorItems(a *App, tp *Timer, current string) []menuet.MenuItem {
 	for i, p := range projectPalette {
 		items = append(items, menuet.MenuItem{
 			Text:    p.Name,
-			Image:   renderSwatch(i),
+			Image:   renderSwatch(i, false),
 			State:   current == p.Name,
 			Clicked: func() { a.setColor(tp, p.Name) },
 		})
@@ -298,12 +298,9 @@ func (a *App) todayItems() []menuet.MenuItem {
 	tl := readTodayLogged(logFilesToRead(logPath), time.Now())
 	projects := buildDaySummary(timers, tl)
 
-	var total time.Duration
-	for _, p := range projects {
-		total += p.Total()
-	}
+	counted, _ := dayTotals(projects)
 	items := []menuet.MenuItem{
-		{Text: headlineText(total, target, tl), FontWeight: menuet.WeightBold, Clicked: func() {}},
+		{Text: headlineText(counted, target, tl), FontWeight: menuet.WeightBold, Clicked: func() {}},
 		{Image: renderDayBar(projects, target), Clicked: func() {}},
 	}
 	for _, p := range projects {
@@ -312,7 +309,7 @@ func (a *App) todayItems() []menuet.MenuItem {
 		}
 		items = append(items, menuet.MenuItem{
 			Text:    rowText(p),
-			Image:   renderSwatch(p.Color),
+			Image:   renderSwatch(p.Color, p.Excluded),
 			Clicked: func() {},
 		})
 	}
@@ -441,6 +438,7 @@ func (a *App) menuItems() []menuet.MenuItem {
 			{Text: "Set Time…", Clicked: func() { a.setTimerTime(tp) }},
 			logItem,
 			{Text: "Pause on Sleep", State: t.PauseOnSleep, Clicked: func() { a.togglePauseOnSleep(tp) }},
+			{Text: "Count Toward Today", State: !t.ExcludeFromToday, Clicked: func() { a.toggleExcludeFromToday(tp) }},
 			{Text: "Colour", Children: func() []menuet.MenuItem { return colorItems(a, tp, colour) }},
 			{Type: menuet.Separator},
 			{Text: "Remove…", Clicked: func() { a.confirmRemove(tp, askRemove) }},

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"image"
+	"image/color"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -199,6 +200,39 @@ func TestBuildDaySummaryChosenColor(t *testing.T) {
 	}
 }
 
+func TestBuildDaySummaryExcluded(t *testing.T) {
+	timers := []timerTime{{Name: "Acme", Elapsed: time.Hour}, {Name: "Blog", Elapsed: 30 * time.Minute, Excluded: true}}
+	tl := todayLog{
+		logged: map[string]time.Duration{"Blog": time.Hour, "Old Name": 2 * time.Hour},
+		counts: map[string]int{"Blog": 1, "Old Name": 1},
+		order:  []string{"Blog", "Old Name"},
+	}
+	got := buildDaySummary(timers, tl)
+	if len(got) != 3 {
+		t.Fatalf("got %d projects want 3: %+v", len(got), got)
+	}
+	if !got[1].Excluded || got[1].Total() != 90*time.Minute {
+		t.Errorf("Blog = %+v, want excluded with its logged time, 1h30m", got[1])
+	}
+	if got[2].Excluded {
+		t.Errorf("CSV-only Old Name is excluded; it has no setting and should count")
+	}
+	if counted, excluded := dayTotals(got); counted != 3*time.Hour || excluded != 90*time.Minute {
+		t.Errorf("dayTotals = %v, %v want 3h, 1h30m", counted, excluded)
+	}
+
+	// Same-named timers merge into one project; either's exclusion wins.
+	for _, firstExcluded := range []bool{true, false} {
+		dup := buildDaySummary([]timerTime{
+			{Name: "Blog", Elapsed: time.Hour, Excluded: firstExcluded},
+			{Name: "Blog", Elapsed: time.Hour, Excluded: !firstExcluded},
+		}, todayLog{})
+		if len(dup) != 1 || !dup[0].Excluded {
+			t.Errorf("first excluded %v: merged Blog = %+v, want one excluded project", firstExcluded, dup)
+		}
+	}
+}
+
 func TestBuildDaySummaryTimerOnly(t *testing.T) {
 	timers := []timerTime{{Name: "Acme", Elapsed: time.Minute}, {Name: "Blip", Elapsed: 59 * time.Second}}
 	got := buildDaySummary(timers, readTodayLogged(nil, time.Now()))
@@ -261,6 +295,8 @@ func TestRowText(t *testing.T) {
 		{projectTotal{Name: "Globex", Logged: 30 * time.Minute, Entries: 1}, "Globex  0h 30m  (1 entry)"},
 		{projectTotal{Name: "New", Unlogged: 90 * time.Minute}, "New  1h 30m  (1h 30m unlogged)"},
 		{projectTotal{Name: "Acme", Logged: time.Hour, Unlogged: 10 * time.Second, Entries: 2}, "Acme  1h 00m  (2 entries)"},
+		{projectTotal{Name: "Blog", Unlogged: 30 * time.Minute, Excluded: true}, "Blog  0h 30m  (30m unlogged, not counted)"},
+		{projectTotal{Name: "Blog", Logged: 30 * time.Second, Entries: 1, Excluded: true}, "Blog  0h 00m  (1 entry, not counted)"},
 	}
 	for _, c := range cases {
 		if got := rowText(c.p); got != c.want {
@@ -348,8 +384,68 @@ func TestRenderDayBarOverTargetDrawsTick(t *testing.T) {
 	}
 }
 
+func TestRenderDayBarExcludedPastTarget(t *testing.T) {
+	cases := []struct {
+		name     string
+		projects []projectTotal
+		// Fractions of the span: the target tick, a pixel of plain counted
+		// color, a track pixel (0 for none) and a pixel in the excluded segment.
+		tick, counted, track, excluded float64
+	}{
+		// Scale 8h + 2h: Acme 0–20%, track to the target at 80%, Blog 80–100%.
+		{"under target", []projectTotal{
+			{Name: "Blog", Logged: 2 * time.Hour, Color: 1, Excluded: true},
+			{Name: "Acme", Logged: 2 * time.Hour},
+		}, 0.80, 0.10, 0.50, 0.90},
+		// Scale 10h + 2h: Acme runs past the tick at 8/12 to 10/12, then Blog.
+		{"over target", []projectTotal{
+			{Name: "Acme", Logged: 10 * time.Hour},
+			{Name: "Blog", Logged: 2 * time.Hour, Color: 1, Excluded: true},
+		}, 8.0 / 12, 9.0 / 12, 0, 11.0 / 12},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, img := decodeDataURI(t, renderDayBar(c.projects, 8*time.Hour))
+			midY := (barTop + barBot) / 2
+			span := barRight - barLeft
+			x := func(frac float64) int { return barLeft + int(frac*float64(span)) }
+			at := func(x int) color.NRGBA { return color.NRGBAModel.Convert(img.At(x, midY)).(color.NRGBA) }
+			// Eight pixels cover a stripe and a gap, so none may be hatched.
+			for px := x(c.counted); px < x(c.counted)+8; px++ {
+				if got := at(px); got != paletteColor(0) {
+					t.Fatalf("counted pixel at x=%d = %v, want %v", px, got, paletteColor(0))
+				}
+			}
+			if c.track > 0 && at(x(c.track)) != trackColor {
+				t.Errorf("pixel at x=%d = %v, want track before the target", x(c.track), at(x(c.track)))
+			}
+			// Scan a few pixels for a colored stripe, then for a track-colored gap.
+			stripe := x(c.excluded)
+			for end := stripe + 8; hatched(stripe, midY); stripe++ {
+				if stripe == end {
+					t.Fatal("no colored stripe found in the excluded segment")
+				}
+			}
+			if got := at(stripe); got != paletteColor(1) {
+				t.Errorf("excluded stripe at x=%d = %v, want %v", stripe, got, paletteColor(1))
+			}
+			for end := stripe + 8; !hatched(stripe, midY); stripe++ {
+				if stripe == end {
+					t.Fatal("no hatch gap found in the excluded segment")
+				}
+			}
+			if got := at(stripe); got != trackColor {
+				t.Errorf("hatch gap at x=%d = %v, want track", stripe, got)
+			}
+			if _, _, _, a := img.At(x(c.tick), barTop-3).RGBA(); a != 0xFFFF {
+				t.Errorf("expected target tick above the bar at x=%d", x(c.tick))
+			}
+		})
+	}
+}
+
 func TestRenderSwatch(t *testing.T) {
-	_, img := decodeDataURI(t, renderSwatch(1))
+	_, img := decodeDataURI(t, renderSwatch(1, false))
 	if b := img.Bounds(); b.Dx() != swatchSize || b.Dy() != swatchSize {
 		t.Errorf("size = %v", b)
 	}
@@ -360,6 +456,23 @@ func TestRenderSwatch(t *testing.T) {
 	}
 	if _, _, _, a := img.At(0, 0).RGBA(); a != 0 {
 		t.Errorf("corner should be transparent")
+	}
+}
+
+func TestRenderSwatchHatched(t *testing.T) {
+	_, img := decodeDataURI(t, renderSwatch(1, true))
+	at := func(x, y int) color.NRGBA { return color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA) }
+	// Both pixels are well inside the dot, so fully covered: the center is
+	// off the hatching, 4px below it is on a stripe.
+	mid := swatchSize / 2
+	if !hatched(mid, mid+4) || hatched(mid, mid) {
+		t.Fatal("test pixels no longer straddle a stripe")
+	}
+	if got := at(mid, mid+4); got != trackColor {
+		t.Errorf("stripe pixel = %v, want trackColor %v", got, trackColor)
+	}
+	if got := at(mid, mid); got != paletteColor(1) {
+		t.Errorf("non-stripe pixel = %v, want %v", got, paletteColor(1))
 	}
 }
 
@@ -386,6 +499,7 @@ func TestTodaySnapshot(t *testing.T) {
 	a.timers[0].Accumulated = time.Hour
 	a.timers[1].Accumulated = 10 * time.Minute
 	a.timers[1].Color = "Teal"
+	a.timers[1].ExcludeFromToday = true
 	a.active = 1
 	a.lastTick = time.Now().Add(-time.Minute)
 
@@ -394,8 +508,8 @@ func TestTodaySnapshot(t *testing.T) {
 	if len(timers) != 2 || timers[0].Elapsed != time.Hour || timers[1].Elapsed != 10*time.Minute {
 		t.Fatalf("stopped: timers = %+v", timers)
 	}
-	if timers[1].Color != "Teal" {
-		t.Errorf("Color not carried into snapshot: %q", timers[1].Color)
+	if timers[1].Color != "Teal" || !timers[1].Excluded || timers[0].Excluded {
+		t.Errorf("Color or Excluded not carried into snapshot: %+v", timers)
 	}
 	if target != defaultDailyTarget {
 		t.Errorf("target = %v", target)
@@ -613,5 +727,38 @@ func TestTodayItemsAreEnabled(t *testing.T) {
 		if it.Clicked == nil {
 			t.Errorf("summary item %q has no action, so it renders dimmed", it.Text)
 		}
+	}
+}
+
+func TestTodayItemsHeadlineLeavesOutExcluded(t *testing.T) {
+	a := newTestApp(t, 2)
+	a.logPath = filepath.Join(t.TempDir(), "log.csv") // keep off the real iCloud log
+	a.timers[0].Name, a.timers[1].Name = "Acme", "Blog"
+	a.timers[0].Accumulated = time.Hour
+	a.timers[1].Accumulated = 2 * time.Hour
+	a.timers[1].ExcludeFromToday = true
+
+	items := a.todayItems()
+	if len(items) != 4 {
+		t.Fatalf("got %d items want 4: %+v", len(items), items)
+	}
+	if want := headlineText(time.Hour, a.dailyTargetValue(), todayLog{}); items[0].Text != want {
+		t.Errorf("headline %q want %q", items[0].Text, want)
+	}
+	if !strings.Contains(items[3].Text, "not counted") {
+		t.Errorf("excluded row %q does not say \"not counted\"", items[3].Text)
+	}
+	// The bar and legend dots are drawn from the same summary; each dot is
+	// hatched only for the excluded project.
+	timers, _, target := a.todaySnapshot()
+	projects := buildDaySummary(timers, todayLog{})
+	if items[1].Image != renderDayBar(projects, target) {
+		t.Error("bar is not drawn from the summary's projects")
+	}
+	if items[2].Image != renderSwatch(projects[0].Color, false) {
+		t.Error("counted row's swatch is not the plain dot")
+	}
+	if items[3].Image != renderSwatch(projects[1].Color, true) {
+		t.Error("excluded row's swatch is not hatched")
 	}
 }

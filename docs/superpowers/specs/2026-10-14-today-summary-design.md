@@ -46,21 +46,22 @@ Start/Stop item and above the timer list:
 
 ### Headline text item
 - `Today  <total> of <target> · <remaining> to go`, where total = logged today
-  + unlogged timer time (see Data). Durations are shown as `Xh YYm`, truncated
-  to minutes. Once total ≥ target: `· target reached` if within one minute of
-  it, otherwise `· <over> over`.
+  + unlogged timer time (see Data) of counted timers (see #22). Durations are
+  shown as `Xh YYm`, truncated to minutes. Once total ≥ target: `· target
+  reached` if within one minute of it, otherwise `· <over> over`.
 - `FontWeight` bold.
 
 ### Headline bar image
 - One fixed-width stacked bar, rendered at 2× pixel density
   (e.g. 520×32 px → displayed ~260×16pt). The bar itself is a rounded
   rectangle ~14 px tall, vertically centered, on a translucent grey track.
-- Scale is `max(target, total)`. Segments are drawn left to right in project
-  order (see Ordering). For each project: a **solid** segment for logged time,
-  then a **lighter shade** segment of the same hue for unlogged
+- Scale is `max(target, counted)` plus excluded time (see #22). Counted
+  segments are drawn left to right in project order (see Ordering), then
+  excluded ones past the target. For each project: a **solid** segment for
+  logged time, then a **lighter shade** segment of the same hue for unlogged
   timer time.
-- When total exceeds target, a thin vertical tick marks the target position
-  so overtime is visible.
+- When the counted total exceeds the target, or any time is excluded, a thin
+  vertical tick marks the target position.
 - Colors come from a fixed palette of saturated mid-tone hues that read on
   both the light and dark menu backgrounds (blue, orange, green, purple, pink,
   teal), cycling if there are more projects. The image is non-template.
@@ -204,7 +205,7 @@ rest of the menu as today.
 - **Accepted:** renaming a timer mid-day splits its time into two rows.
 - **Sub-minute timer time is hidden:** a row mentions unlogged time only at
   ≥ 1m, and a project with no entries and under a minute on its timer is
-  left out. It still counts toward the headline total and the bar.
+  left out. It still adds to the totals and the bar.
 - **The day starts at 4 am, not midnight:** the window is
   `[04:00 local, 04:00 next day)` (`dayStartHour`), so late-night work logged
   after midnight still counts toward the evening it belongs to.
@@ -232,3 +233,11 @@ rest of the menu as today.
   timer restarted this morning while still holding yesterday's leftover
   counts and logs entirely as today (use Log & Reset as Yesterday, or log the
   leftover before starting it).
+- **Timers left out of the total (#22):** a timer's **Count Toward Today**
+  checkmark (on by default) saves `excludeFromToday` when cleared. Its time,
+  logged rows under its name included, then stays out of the headline total
+  but keeps its row, marked `not counted` last in the parenthetical. In the
+  bar, counted projects fill from the left as before; excluded ones are
+  hatched and start at `max(target, counted)`, on a scale of that plus the
+  excluded time, so they always sit past the target tick. Their legend dot is
+  hatched to match. CSV-only names have no setting and always count.

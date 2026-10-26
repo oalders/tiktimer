@@ -65,6 +65,10 @@ func unloggedShade(c color.NRGBA) color.NRGBA {
 	return c
 }
 
+// hatched reports whether pixel (x, y) is on a track-colored stripe of the
+// diagonal hatching that marks time left out of the Today total.
+func hatched(x, y int) bool { return (x+y)/4%2 == 1 }
+
 // pillCoverage reports how much of pixel (px, py) lies inside the rounded bar,
 // from 4x4 supersampling, so the ends are anti-aliased.
 func pillCoverage(px, py int) float64 {
@@ -95,39 +99,43 @@ func pillCoverage(px, py int) float64 {
 
 // renderDayBar draws the day's stacked bar: per project, a solid segment for
 // logged time then a translucent one for unlogged timer time, over a grey
-// track scaled to max(target, total). Past the target, a tick marks where the
-// target falls.
+// track scaled to max(target, counted) plus excluded time. Excluded projects
+// are hatched and start at max(target, counted), past the target, where a
+// tick marks the target.
 func renderDayBar(projects []projectTotal, target time.Duration) string {
-	var total time.Duration
-	for _, p := range projects {
-		total += p.Total()
-	}
-	scale := target
-	if total > scale {
-		scale = total
-	}
+	counted, excluded := dayTotals(projects)
+	base := max(target, counted)
+	scale := base + excluded
 
 	// Color each pixel column by the segment it falls in.
 	span := barRight - barLeft
 	cols := make([]color.NRGBA, span)
+	hatch := make([]bool, span)
 	for i := range cols {
 		cols[i] = trackColor
 	}
 	if scale > 0 {
 		var acc time.Duration
-		paint := func(d time.Duration, c color.NRGBA) {
+		paint := func(d time.Duration, c color.NRGBA, h bool) {
 			from := int(float64(acc) / float64(scale) * float64(span))
 			acc += d
 			to := int(float64(acc) / float64(scale) * float64(span))
 			for x := from; x < to && x < span; x++ {
-				cols[x] = c
+				cols[x], hatch[x] = c, h
 			}
 		}
-		for _, p := range projects {
-			c := paletteColor(p.Color)
-			paint(p.Logged, c)
-			paint(p.Unlogged, unloggedShade(c))
+		paintAll := func(excluded bool) {
+			for _, p := range projects {
+				if p.Excluded == excluded {
+					c := paletteColor(p.Color)
+					paint(p.Logged, c, excluded)
+					paint(p.Unlogged, unloggedShade(c), excluded)
+				}
+			}
 		}
+		paintAll(false)
+		acc = base
+		paintAll(true)
 	}
 
 	img := image.NewNRGBA(image.Rect(0, 0, barW, barH))
@@ -138,12 +146,15 @@ func renderDayBar(projects []projectTotal, target time.Duration) string {
 				continue
 			}
 			c := cols[x-barLeft]
+			if hatch[x-barLeft] && hatched(x, y) {
+				c = trackColor
+			}
 			c.A = uint8(float64(c.A) * cov)
 			img.SetNRGBA(x, y, c)
 		}
 	}
 
-	if total > target && scale > 0 {
+	if (counted > target || excluded > 0) && scale > 0 {
 		tx := barLeft + int(float64(target)/float64(scale)*float64(span))
 		for y := barTop - 5; y <= barBot+5; y++ {
 			img.SetNRGBA(tx-2, y, tickLight)
@@ -155,8 +166,9 @@ func renderDayBar(projects []projectTotal, target time.Duration) string {
 	return pngDataURI(img)
 }
 
-// renderSwatch draws the legend dot for palette index i.
-func renderSwatch(i int) string {
+// renderSwatch draws the legend dot for palette index i, hatched like its bar
+// segment when the project is excluded from the Today total.
+func renderSwatch(i int, hatch bool) string {
 	c := paletteColor(i)
 	img := image.NewNRGBA(image.Rect(0, 0, swatchSize, swatchSize))
 	r := float64(swatchDiam) / 2
@@ -176,7 +188,10 @@ func renderSwatch(i int) string {
 			}
 			if inside > 0 {
 				cc := c
-				cc.A = uint8(float64(c.A) * float64(inside) / (n * n))
+				if hatch && hatched(px, py) {
+					cc = trackColor
+				}
+				cc.A = uint8(float64(cc.A) * float64(inside) / (n * n))
 				img.SetNRGBA(px, py, cc)
 			}
 		}
