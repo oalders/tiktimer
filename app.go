@@ -85,7 +85,10 @@ func (a *App) save() {
 	a.mu.Unlock()
 
 	b, _ := json.MarshalIndent(data, "", "  ")
-	os.WriteFile(a.savePath(), b, 0644)
+	path := a.savePath()
+	os.WriteFile(path, b, 0o600)
+	// WriteFile keeps an existing file's mode, so tighten older 0644 files too.
+	os.Chmod(path, 0o600)
 }
 
 // saveAsync persists state off the caller's goroutine so UI click handlers do
