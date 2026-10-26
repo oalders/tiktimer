@@ -46,18 +46,19 @@ Start/Stop item and above the timer list:
 
 ### Headline text item
 - `Today  <total> of <target> · <remaining> to go`, where total = logged today
-  + unlogged timer time (see Data). Durations are shown as `Xh YYm`, truncated
-  to minutes. Once total ≥ target: `· target reached` if within one minute of
-  it, otherwise `· <over> over`.
+  + unlogged timer time (see Data) of counted timers (see #22). Durations are
+  shown as `Xh YYm`, truncated to minutes. Once total ≥ target: `· target
+  reached` if within one minute of it, otherwise `· <over> over`.
 - `FontWeight` bold.
 
 ### Headline bar image
 - One fixed-width stacked bar, rendered at 2× pixel density
   (e.g. 520×32 px → displayed ~260×16pt). The bar itself is a rounded
   rectangle ~14 px tall, vertically centered, on a translucent grey track.
-- Scale is `max(target, counted)` plus excluded time (see #22). Segments are drawn left to right in project
-  order (see Ordering). For each project: a **solid** segment for logged time,
-  then a **lighter shade** segment of the same hue for unlogged
+- Scale is `max(target, counted)` plus excluded time (see #22). Counted
+  segments are drawn left to right in project order (see Ordering), then
+  excluded ones past the target. For each project: a **solid** segment for
+  logged time, then a **lighter shade** segment of the same hue for unlogged
   timer time.
 - When the counted total exceeds the target, or any time is excluded, a thin
   vertical tick marks the target position.

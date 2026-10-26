@@ -222,9 +222,14 @@ func TestBuildDaySummaryExcluded(t *testing.T) {
 	}
 
 	// Same-named timers merge into one project; either's exclusion wins.
-	dup := buildDaySummary([]timerTime{{Name: "Blog", Elapsed: time.Hour, Excluded: true}, {Name: "Blog", Elapsed: time.Hour}}, todayLog{})
-	if len(dup) != 1 || !dup[0].Excluded {
-		t.Errorf("merged Blog = %+v, want one excluded project", dup)
+	for _, firstExcluded := range []bool{true, false} {
+		dup := buildDaySummary([]timerTime{
+			{Name: "Blog", Elapsed: time.Hour, Excluded: firstExcluded},
+			{Name: "Blog", Elapsed: time.Hour, Excluded: !firstExcluded},
+		}, todayLog{})
+		if len(dup) != 1 || !dup[0].Excluded {
+			t.Errorf("first excluded %v: merged Blog = %+v, want one excluded project", firstExcluded, dup)
+		}
 	}
 }
 
@@ -743,9 +748,13 @@ func TestTodayItemsHeadlineLeavesOutExcluded(t *testing.T) {
 	if !strings.Contains(items[3].Text, "not counted") {
 		t.Errorf("excluded row %q does not say \"not counted\"", items[3].Text)
 	}
-	// Each legend dot is hatched only for the excluded project.
-	timers, _, _ := a.todaySnapshot()
+	// The bar and legend dots are drawn from the same summary; each dot is
+	// hatched only for the excluded project.
+	timers, _, target := a.todaySnapshot()
 	projects := buildDaySummary(timers, todayLog{})
+	if items[1].Image != renderDayBar(projects, target) {
+		t.Error("bar is not drawn from the summary's projects")
+	}
 	if items[2].Image != renderSwatch(projects[0].Color, false) {
 		t.Error("counted row's swatch is not the plain dot")
 	}
