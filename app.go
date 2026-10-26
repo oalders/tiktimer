@@ -27,7 +27,7 @@ type Timer struct {
 	// summary. Empty means the color its position gives it.
 	Color string `json:"color,omitempty"`
 	// ExcludeFromToday leaves this timer's time out of the Today total; it
-	// still gets its own row and bar segment.
+	// still appears in the Today rows and bar.
 	ExcludeFromToday bool `json:"excludeFromToday,omitempty"`
 }
 

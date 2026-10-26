@@ -55,12 +55,12 @@ Start/Stop item and above the timer list:
 - One fixed-width stacked bar, rendered at 2× pixel density
   (e.g. 520×32 px → displayed ~260×16pt). The bar itself is a rounded
   rectangle ~14 px tall, vertically centered, on a translucent grey track.
-- Scale is `max(target, total)`. Segments are drawn left to right in project
+- Scale is `max(target, counted)` plus excluded time (see #22). Segments are drawn left to right in project
   order (see Ordering). For each project: a **solid** segment for logged time,
   then a **lighter shade** segment of the same hue for unlogged
   timer time.
-- When total exceeds target, a thin vertical tick marks the target position
-  so overtime is visible.
+- When the counted total exceeds the target, or any time is excluded, a thin
+  vertical tick marks the target position.
 - Colors come from a fixed palette of saturated mid-tone hues that read on
   both the light and dark menu backgrounds (blue, orange, green, purple, pink,
   teal), cycling if there are more projects. The image is non-template.
@@ -204,7 +204,7 @@ rest of the menu as today.
 - **Accepted:** renaming a timer mid-day splits its time into two rows.
 - **Sub-minute timer time is hidden:** a row mentions unlogged time only at
   ≥ 1m, and a project with no entries and under a minute on its timer is
-  left out. It still counts toward the headline total and the bar.
+  left out. It still adds to the totals and the bar.
 - **The day starts at 4 am, not midnight:** the window is
   `[04:00 local, 04:00 next day)` (`dayStartHour`), so late-night work logged
   after midnight still counts toward the evening it belongs to.
