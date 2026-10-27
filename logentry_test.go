@@ -168,6 +168,7 @@ func TestParseHMS(t *testing.T) {
 		{"01:23:45", time.Hour + 23*time.Minute + 45*time.Second},
 		{"100:05:03", 100*time.Hour + 5*time.Minute + 3*time.Second},
 		{"  01:00:00 ", time.Hour},
+		{"9999:59:59", 9999*time.Hour + 59*time.Minute + 59*time.Second},
 	}
 	for _, c := range good {
 		got, err := parseHMS(c.in)
@@ -180,7 +181,7 @@ func TestParseHMS(t *testing.T) {
 		}
 	}
 
-	bad := []string{"", "1:2", "01:60:00", "01:00:60", "aa:00:00", "-1:00:00", "01:00:00:00"}
+	bad := []string{"", "1:2", "01:60:00", "01:00:60", "aa:00:00", "-1:00:00", "01:00:00:00", "10000:00:00", "9999999999:00:00"}
 	for _, in := range bad {
 		if _, err := parseHMS(in); err == nil {
 			t.Errorf("parseHMS(%q): expected error, got nil", in)
