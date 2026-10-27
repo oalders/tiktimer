@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -868,6 +869,24 @@ func TestCopyPathMessage(t *testing.T) {
 			t.Errorf("got %q want %q", got, want)
 		}
 	})
+}
+
+func TestSaveIsOwnerOnly(t *testing.T) {
+	a := newApp()
+	a.home = t.TempDir()
+	path := a.savePath()
+	if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.save()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("save file mode = %#o, want 0600", got)
+	}
 }
 
 func TestSaveLoadRoundTrip(t *testing.T) {
