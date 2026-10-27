@@ -50,6 +50,8 @@ type App struct {
 	dailyTarget time.Duration
 	home        string // base dir for the state file; empty means the OS home dir
 	saveWG      sync.WaitGroup
+	// saveMu orders snapshot+rename so an older async save can't land last.
+	saveMu sync.Mutex
 	// autoPaused records that pauseForSleep stopped the timer, so resumeAfterWake
 	// knows to restart it (and leaves a user-stopped timer alone).
 	autoPaused bool
@@ -77,6 +79,8 @@ func (a *App) savePath() string {
 }
 
 func (a *App) save() {
+	a.saveMu.Lock()
+	defer a.saveMu.Unlock()
 	a.mu.Lock()
 	data := saveData{Active: a.active, Display: a.display, LogPath: a.logPath, DailyTargetHours: a.dailyTarget.Hours()}
 	for _, t := range a.timers {
