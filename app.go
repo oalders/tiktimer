@@ -86,9 +86,25 @@ func (a *App) save() {
 
 	b, _ := json.MarshalIndent(data, "", "  ")
 	path := a.savePath()
-	os.WriteFile(path, b, 0o600)
-	// WriteFile keeps an existing file's mode, so tighten older 0644 files too.
-	os.Chmod(path, 0o600)
+	// Write a temp file and rename it over the save file so a crash mid-save
+	// never leaves a truncated file behind.
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tiktimer-*.json")
+	if err != nil {
+		return
+	}
+	_, err = tmp.Write(b)
+	if err == nil {
+		err = tmp.Sync()
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmp.Name(), path)
+	}
+	if err != nil {
+		os.Remove(tmp.Name())
+	}
 }
 
 // saveAsync persists state off the caller's goroutine so UI click handlers do
