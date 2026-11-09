@@ -9,8 +9,8 @@
 @end
 
 @implementation SleepWatcher
-- (void)didSleep:(NSNotification *)note {
-    goDidSleep();
+- (void)screensDidSleep:(NSNotification *)note {
+    goScreenDidSleep();
 }
 - (void)systemWillSleep:(NSNotification *)note {
     goSystemWillSleep();
@@ -29,7 +29,7 @@ void startSleepWatch(void) {
 
     NSNotificationCenter *center = [[NSWorkspace sharedWorkspace] notificationCenter];
     [center addObserver:watcher
-               selector:@selector(didSleep:)
+               selector:@selector(screensDidSleep:)
                    name:NSWorkspaceScreensDidSleepNotification
                  object:nil];
     [center addObserver:watcher

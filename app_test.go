@@ -808,7 +808,7 @@ func TestPauseForSleepAndResume(t *testing.T) {
 			t.Fatalf("after wake: running=%v autoPaused=%v want true/false", a.running, a.autoPaused)
 		}
 		a.flushActive()
-		if gained := a.timers[0].Accumulated - banked; gained >= time.Minute {
+		if gained := a.timers[0].Accumulated - banked; gained >= 5*time.Second {
 			t.Errorf("sleep gap counted after wake: gained %v", gained)
 		}
 	})

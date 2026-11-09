@@ -11,8 +11,8 @@ import "C"
 // thread while that loop is live.
 var sleepWatchApp *App
 
-//export goDidSleep
-func goDidSleep() {
+//export goScreenDidSleep
+func goScreenDidSleep() {
 	if sleepWatchApp != nil {
 		sleepWatchApp.pauseForSleep(false)
 	}
