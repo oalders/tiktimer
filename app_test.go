@@ -748,7 +748,7 @@ func TestPauseForSleepAndResume(t *testing.T) {
 		a.running = true
 		a.lastTick = time.Now().Add(-3 * time.Second)
 
-		a.pauseForSleep()
+		a.pauseForSleep(false)
 		if a.running || !a.autoPaused {
 			t.Fatalf("after sleep: running=%v autoPaused=%v want false/true", a.running, a.autoPaused)
 		}
@@ -764,15 +764,52 @@ func TestPauseForSleepAndResume(t *testing.T) {
 		}
 	})
 
-	t.Run("opted-out timer keeps running through sleep", func(t *testing.T) {
+	t.Run("opted-out timer keeps running through screen sleep", func(t *testing.T) {
 		a := newTestApp(t, 1)
 		a.active = 0
 		a.timers[0].PauseOnSleep = false
 		a.running = true
 
-		a.pauseForSleep()
+		a.pauseForSleep(false)
 		if !a.running || a.autoPaused {
 			t.Errorf("opted-out timer should be untouched: running=%v autoPaused=%v", a.running, a.autoPaused)
+		}
+	})
+
+	t.Run("opted-out timer stops on system sleep and maintenance wakes add no time", func(t *testing.T) {
+		a := newTestApp(t, 1)
+		a.active = 0
+		a.timers[0].PauseOnSleep = false
+		a.running = true
+		a.lastTick = time.Now().Add(-3 * time.Second)
+
+		a.pauseForSleep(true)
+		if a.running || !a.autoPaused {
+			t.Fatalf("after sleep: running=%v autoPaused=%v want false/true", a.running, a.autoPaused)
+		}
+		banked := a.timers[0].Accumulated
+		if banked < 3*time.Second {
+			t.Errorf("time up to sleep not banked: got %v", banked)
+		}
+		lastRun := a.timers[0].LastRun
+
+		// An hour asleep, then what tick does in a maintenance wake.
+		a.lastTick = time.Now().Add(-time.Hour)
+		a.flushActive()
+		if a.timers[0].Accumulated != banked {
+			t.Errorf("maintenance wake added time: got %v want %v", a.timers[0].Accumulated, banked)
+		}
+		if !a.timers[0].LastRun.Equal(lastRun) {
+			t.Errorf("maintenance wake moved LastRun: got %v want %v", a.timers[0].LastRun, lastRun)
+		}
+
+		a.resumeAfterWake()
+		if !a.running || a.autoPaused {
+			t.Fatalf("after wake: running=%v autoPaused=%v want true/false", a.running, a.autoPaused)
+		}
+		a.flushActive()
+		if gained := a.timers[0].Accumulated - banked; gained >= time.Minute {
+			t.Errorf("sleep gap counted after wake: gained %v", gained)
 		}
 	})
 
@@ -782,8 +819,8 @@ func TestPauseForSleepAndResume(t *testing.T) {
 		a.timers[0].PauseOnSleep = true
 		a.running = false // user already stopped it
 
-		a.pauseForSleep()   // no-op: not running
-		a.resumeAfterWake() // must not start it
+		a.pauseForSleep(false) // no-op: not running
+		a.resumeAfterWake()    // must not start it
 		if a.running {
 			t.Error("wake should not start a timer the user had stopped")
 		}
@@ -795,8 +832,8 @@ func TestPauseForSleepAndResume(t *testing.T) {
 		a.timers[0].PauseOnSleep = true
 		a.running = true
 
-		a.pauseForSleep()
-		a.pauseForSleep() // second notification
+		a.pauseForSleep(false)
+		a.pauseForSleep(false) // second notification
 		if a.running || !a.autoPaused {
 			t.Fatalf("double sleep: running=%v autoPaused=%v", a.running, a.autoPaused)
 		}
@@ -813,8 +850,8 @@ func TestPauseForSleepAndResume(t *testing.T) {
 		a.timers[0].PauseOnSleep = true
 		a.running = true
 
-		a.pauseForSleep() // autoPaused = true
-		a.toggleActive()  // user manually starts it; clears autoPaused
+		a.pauseForSleep(false) // autoPaused = true
+		a.toggleActive()       // user manually starts it; clears autoPaused
 		if !a.running || a.autoPaused {
 			t.Fatalf("after manual toggle: running=%v autoPaused=%v want true/false", a.running, a.autoPaused)
 		}

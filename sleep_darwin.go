@@ -14,7 +14,14 @@ var sleepWatchApp *App
 //export goDidSleep
 func goDidSleep() {
 	if sleepWatchApp != nil {
-		sleepWatchApp.pauseForSleep()
+		sleepWatchApp.pauseForSleep(false)
+	}
+}
+
+//export goSystemWillSleep
+func goSystemWillSleep() {
+	if sleepWatchApp != nil {
+		sleepWatchApp.pauseForSleep(true)
 	}
 }
 
@@ -25,8 +32,9 @@ func goDidWake() {
 	}
 }
 
-// watchSleep registers for display and system sleep/wake notifications so opted-in
-// timers pause while the Mac is asleep. Call it before menuet starts its run loop.
+// watchSleep registers for display and system sleep/wake notifications so timers
+// pause while the Mac sleeps and opted-in ones also while just the display does.
+// Call it before menuet starts its run loop.
 func watchSleep(a *App) {
 	sleepWatchApp = a
 	C.startSleepWatch()

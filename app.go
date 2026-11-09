@@ -15,8 +15,8 @@ import (
 type Timer struct {
 	Name        string        `json:"name"`
 	Accumulated time.Duration `json:"accumulated"`
-	// PauseOnSleep, when set, makes this timer stop while the display (or the
-	// system) sleeps and resume on wake, so away-from-desk time is not counted.
+	// PauseOnSleep also stops this timer while just the display sleeps, so
+	// away-from-desk time is not counted; system sleep stops every timer.
 	PauseOnSleep bool `json:"pauseOnSleep,omitempty"`
 	// LastRun is when time last accrued on this timer. Log & Reset dates a row
 	// with it when all the time is from before today's work day, and the Today
@@ -245,13 +245,14 @@ func (a *App) toggleActive() (running, ok bool) {
 	return a.running, true
 }
 
-// pauseForSleep stops the active timer when the display or system sleeps, but
-// only if that timer opted in via PauseOnSleep. The stop is flagged autoPaused
-// so resumeAfterWake can restart it. It is idempotent: a screen-sleep followed
-// by a system-sleep notification pauses only once.
-func (a *App) pauseForSleep() {
+// pauseForSleep stops the active timer on system sleep (system true), so
+// maintenance wakes add no time, and on screen sleep only if it opted in via
+// PauseOnSleep. The stop is flagged autoPaused so resumeAfterWake can restart
+// it. It is idempotent: a screen-sleep followed by a system-sleep notification
+// pauses only once.
+func (a *App) pauseForSleep(system bool) {
 	a.mu.Lock()
-	if a.running && a.active >= 0 && a.active < len(a.timers) && a.timers[a.active].PauseOnSleep {
+	if a.running && a.active >= 0 && a.active < len(a.timers) && (system || a.timers[a.active].PauseOnSleep) {
 		a.flushActive()
 		a.running = false
 		a.autoPaused = true
