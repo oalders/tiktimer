@@ -889,6 +889,35 @@ func TestSaveIsOwnerOnly(t *testing.T) {
 	}
 }
 
+func TestSaveReplacesFileAtomically(t *testing.T) {
+	a := newApp()
+	a.home = t.TempDir()
+	path := a.savePath()
+	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.save()
+
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(before, after) {
+		t.Error("save rewrote the file in place; want a temp file renamed over it")
+	}
+	entries, err := os.ReadDir(a.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != ".tiktimer.json" {
+		t.Errorf("dir entries = %v, want only .tiktimer.json", entries)
+	}
+}
+
 func TestSaveLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
