@@ -191,7 +191,8 @@ func unformulaSafe(s string) string {
 // encountered while writing, flushing, or closing the file so callers can
 // avoid resetting a timer whose time was never persisted. tracked is the
 // timer's raw HH:MM:SS value, kept for audit when the logged duration was
-// rounded or edited.
+// rounded or edited. New logs are created owner-only; an existing log keeps
+// its mode because a custom path may be shared on purpose.
 func appendLogRow(path, timestamp, name, duration, hours, note, tracked string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
@@ -202,7 +203,7 @@ func appendLogRow(path, timestamp, name, duration, hours, note, tracked string) 
 		needHeader = false
 	}
 
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}

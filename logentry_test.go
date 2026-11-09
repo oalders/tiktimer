@@ -158,6 +158,43 @@ func TestAppendLogRowEscapesNote(t *testing.T) {
 	}
 }
 
+func TestAppendLogRowCreatesOwnerOnlyFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "log.csv")
+	if err := appendLogRow(path, "2026-07-23T14:30:00-04:00", "Acme", "01:00:00", "1.00", "x", "01:00:00"); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("new log mode = %#o, want 0600", got)
+	}
+}
+
+func TestAppendLogRowKeepsExistingFileMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "log.csv")
+	if err := os.WriteFile(path, []byte{}, 0o644); err != nil {
+		t.Fatalf("precreate: %v", err)
+	}
+	// WriteFile's mode is subject to the umask; the starting mode must be exact.
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := appendLogRow(path, "2026-07-23T14:30:00-04:00", "Acme", "01:00:00", "1.00", "x", "01:00:00"); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o644 {
+		t.Errorf("existing log mode = %#o, want 0644", got)
+	}
+}
+
 func TestParseHMS(t *testing.T) {
 	good := []struct {
 		in   string
