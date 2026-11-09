@@ -793,7 +793,7 @@ func TestPauseForSleepAndResume(t *testing.T) {
 		}
 		lastRun := a.timers[0].LastRun
 
-		// An hour asleep, then what tick does in a maintenance wake.
+		// A flush on the stopped timer adds nothing and leaves LastRun alone.
 		a.lastTick = time.Now().Add(-time.Hour)
 		a.flushActive()
 		if a.timers[0].Accumulated != banked {
