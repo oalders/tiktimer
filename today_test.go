@@ -939,6 +939,34 @@ func TestWeekText(t *testing.T) {
 	}
 }
 
+// A LastRun saved in another zone (before travel or a DST change) still counts
+// on its local work day.
+func TestTodayItemsLeftoverLastRunFromOtherZone(t *testing.T) {
+	loc := time.FixedZone("EST", -5*3600)
+	now := time.Date(2026, 11, 12, 15, 0, 0, 0, loc) // Thursday
+	saved := newTestApp(t, 1)
+	// Tue Nov 10 21:00 EST, saved as UTC.
+	saved.timers[0].Accumulated, saved.timers[0].LastRun = 2*time.Hour, time.Date(2026, 11, 11, 2, 0, 0, 0, time.UTC)
+	saved.save()
+	a := newTestApp(t, 0)
+	a.home = saved.home
+	a.load()
+	a.logPath = filepath.Join(t.TempDir(), "log.csv") // keep off the real iCloud log
+
+	items := a.todayItems(now)
+	week := items[len(items)-1]
+	if !strings.HasPrefix(week.Text, "This Week  2h 00m of 40h") {
+		t.Errorf("This Week %q, want the leftover's 2h", week.Text)
+	}
+	var texts []string
+	for _, it := range week.Children() {
+		texts = append(texts, it.Text)
+	}
+	if got, want := strings.Join(texts, "|"), "Mon  0h 00m|Tue  2h 00m|Wed  0h 00m|Thu  0h 00m"; got != want {
+		t.Errorf("week rows %q want %q", got, want)
+	}
+}
+
 func TestTodayItemsTimerTimeOnLastRunDay(t *testing.T) {
 	loc := time.FixedZone("EST", -5*3600)
 	cases := []struct {
