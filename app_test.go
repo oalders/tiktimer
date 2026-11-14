@@ -133,9 +133,13 @@ func TestMenuItemsSettingsSubmenu(t *testing.T) {
 	}
 	var texts []string
 	for _, c := range last.Children() {
+		// TestWeeklyTarget checks this label as the target changes.
+		if strings.HasPrefix(c.Text, "Weekly Target") {
+			c.Text = "Weekly Target"
+		}
 		texts = append(texts, c.Text)
 	}
-	want := []string{"Odometer Display", "Daily Target (8h)…", "Weekly Target (40h, auto)…", "Copy Log File Path", "Show Log in Finder"}
+	want := []string{"Odometer Display", "Daily Target (8h)…", "Weekly Target", "Copy Log File Path", "Show Log in Finder"}
 	if !slices.Equal(texts, want) {
 		t.Errorf("Settings children %q want %q", texts, want)
 	}

@@ -63,8 +63,13 @@ type todayLog struct {
 	counts map[string]int
 	// order lists project names in order of first appearance.
 	order []string
-	// unreadable is set when a file exists but could not be read; dataless when
-	// one was skipped because iCloud has not downloaded it.
+	logFlags
+}
+
+// logFlags warn that the logs read may be incomplete: unreadable when a file
+// exists but could not be read, dataless when one was skipped because iCloud
+// has not downloaded it.
+type logFlags struct {
 	unreadable bool
 	dataless   bool
 }
@@ -162,12 +167,12 @@ func (ld loggedDays) day(start time.Time) todayLog {
 }
 
 // readLogged sums each project's logged duration per work day in [start, end)
-// across paths, reading each file once. The unreadable and dataless flags are
-// file-level, so they are set on flags rather than on any day. Missing files
-// count as zero. Rows are read by position with a variable field count,
-// because files predating the tracked column have a 5-column header followed
-// by 6-column rows. Malformed rows are skipped.
-func readLogged(paths []string, start, end time.Time) (days loggedDays, flags todayLog) {
+// across paths, reading each file once. The flags are file-level, so they are
+// returned apart from any day. Missing files count as zero. Rows are read by
+// position with a variable field count, because files predating the tracked
+// column have a 5-column header followed by 6-column rows. Malformed rows are
+// skipped.
+func readLogged(paths []string, start, end time.Time) (days loggedDays, flags logFlags) {
 	days = loggedDays{}
 	for _, p := range paths {
 		fi, err := os.Stat(p)
@@ -182,14 +187,16 @@ func readLogged(paths []string, start, end time.Time) (days loggedDays, flags to
 			flags.dataless = true
 			continue
 		}
-		if err := flags.readFile(p, start, end, days); err != nil {
+		if err := readFile(p, start, end, days); err != nil {
 			flags.unreadable = true
 		}
 	}
 	return days, flags
 }
 
-func (tl *todayLog) readFile(path string, start, end time.Time, days loggedDays) error {
+// readFile adds path's rows in [start, end) to days. A quoting error skips
+// the bad record but is still returned, since it can swallow later rows.
+func readFile(path string, start, end time.Time, days loggedDays) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -200,17 +207,17 @@ func (tl *todayLog) readFile(path string, start, end time.Time, days loggedDays)
 	// the menu; a real log is a few kilobytes per day.
 	r := csv.NewReader(io.LimitReader(f, maxLogBytes))
 	r.FieldsPerRecord = -1
+	var parseErr error
 	for {
 		rec, err := r.Read()
 		if err == io.EOF {
-			return nil
+			return parseErr
 		}
 		if err != nil {
-			// A quoting error leaves the reader past the bad record; keep going,
-			// but flag it, since an unterminated quote can swallow later rows.
+			// A quoting error leaves the reader past the bad record; keep going.
 			var pe *csv.ParseError
 			if errors.As(err, &pe) {
-				tl.unreadable = true
+				parseErr = err
 				continue
 			}
 			return err
@@ -372,14 +379,11 @@ func formatCompact(d time.Duration) string {
 
 // headlineText is a summary line: "Today  7h 08m of 8h · 52m to go". The
 // remaining/over time is derived from the minute-truncated total, so the two
-// numbers always agree. tl carries the log flags, passed for Today only.
-func headlineText(label string, total, target time.Duration, tl todayLog) string {
+// numbers always agree. under names the time still missing ("to go", or
+// "short" for a day that is over); flags are passed for Today only.
+func headlineText(label string, total, target time.Duration, under string, flags logFlags) string {
 	total = total.Truncate(time.Minute)
 	s := fmt.Sprintf("%s  %s of %s", label, formatHM(total), formatCompact(target))
-	under := "to go"
-	if label == "Yesterday" {
-		under = "short" // the day is over, so nothing is still to go
-	}
 	switch diff := target - total; {
 	case diff < time.Minute && diff > -time.Minute:
 		s += " · target reached"
@@ -388,10 +392,10 @@ func headlineText(label string, total, target time.Duration, tl todayLog) string
 	default:
 		s += fmt.Sprintf(" · %s over", formatCompact(-diff))
 	}
-	if tl.unreadable {
+	if flags.unreadable {
 		s += " · log unreadable"
 	}
-	if tl.dataless {
+	if flags.dataless {
 		s += " · some logs not downloaded"
 	}
 	return s
@@ -400,7 +404,7 @@ func headlineText(label string, total, target time.Duration, tl todayLog) string
 // weekText is the This Week line: the headline plus, while under target, the
 // time per day left (today included) needed to meet it, rounded up to the minute.
 func weekText(total, target time.Duration, daysLeft int) string {
-	s := headlineText("This Week", total, target, todayLog{})
+	s := headlineText("This Week", total, target, "to go", logFlags{})
 	if left := int((target - total.Truncate(time.Minute)) / time.Minute); left >= 1 {
 		perDay := time.Duration((left+daysLeft-1)/daysLeft) * time.Minute
 		s += fmt.Sprintf(" · %s/day left", formatCompact(perDay))

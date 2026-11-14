@@ -544,11 +544,11 @@ func (a *App) setWeeklyTarget(d time.Duration) {
 // todaySnapshot copies what the summary needs from app state, so the log
 // files can be read without holding the mutex: every timer's unlogged time
 // (including in-flight time for the running timer) and the work day it counts
-// on, the log path, and the daily and weekly targets.
-func (a *App) todaySnapshot() (timers []timerTime, logPath string, target, weekTarget time.Duration) {
+// on, the log path, and the daily and weekly targets. now is the caller's, so
+// the days here match the ones the caller buckets the logs into.
+func (a *App) todaySnapshot(now time.Time) (timers []timerTime, logPath string, target, weekTarget time.Duration) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	now := time.Now()
 	today, _ := dayBounds(now)
 	for i, t := range a.timers {
 		acc := t.Accumulated

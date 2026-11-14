@@ -296,7 +296,7 @@ func colorItems(a *App, tp *Timer, current string) []menuet.MenuItem {
 // only; their click does nothing, but without it AppKit greys them out as
 // disabled.
 func (a *App) todayItems(now time.Time) []menuet.MenuItem {
-	timers, logPath, target, weekTarget := a.todaySnapshot()
+	timers, logPath, target, weekTarget := a.todaySnapshot(now)
 	today, todayEnd := dayBounds(now)
 	yesterday := today.AddDate(0, 0, -1)
 	weekStart, daysLeft := weekBounds(now)
@@ -306,7 +306,7 @@ func (a *App) todayItems(now time.Time) []menuet.MenuItem {
 	}
 	days, flags := readLogged(logFilesToRead(logPath), from, todayEnd)
 	tl := days.day(today)
-	tl.unreadable, tl.dataless = flags.unreadable, flags.dataless
+	tl.logFlags = flags
 	projects := buildDaySummary(onDay(timers, today), tl)
 	// dayTotal is a work day's counted time, truncated so the week rows add
 	// up to the week line.
@@ -317,7 +317,7 @@ func (a *App) todayItems(now time.Time) []menuet.MenuItem {
 
 	counted, _ := dayTotals(projects)
 	items := []menuet.MenuItem{
-		{Text: headlineText("Today", counted, target, tl), FontWeight: menuet.WeightBold, Clicked: func() {}},
+		{Text: headlineText("Today", counted, target, "to go", tl.logFlags), FontWeight: menuet.WeightBold, Clicked: func() {}},
 		{Image: renderDayBar(projects, target), Clicked: func() {}},
 	}
 	for _, p := range projects {
@@ -339,7 +339,7 @@ func (a *App) todayItems(now time.Time) []menuet.MenuItem {
 		weekRows = append(weekRows, menuet.MenuItem{Text: day.Format("Mon") + "  " + formatHM(d), Clicked: func() {}})
 	}
 	return append(items,
-		menuet.MenuItem{Text: headlineText("Yesterday", dayTotal(yesterday), target, todayLog{}), FontWeight: menuet.WeightBold, Clicked: func() {}},
+		menuet.MenuItem{Text: headlineText("Yesterday", dayTotal(yesterday), target, "short", logFlags{}), FontWeight: menuet.WeightBold, Clicked: func() {}},
 		menuet.MenuItem{Text: weekText(week, weekTarget, daysLeft), FontWeight: menuet.WeightBold, Children: func() []menuet.MenuItem { return weekRows }},
 	)
 }
