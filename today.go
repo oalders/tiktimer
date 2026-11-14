@@ -17,6 +17,12 @@ import (
 // defaultDailyTarget applies when dailyTargetHours is unset in the save file.
 const defaultDailyTarget = 8 * time.Hour
 
+// maxDailyHours and maxWeeklyHours bound the targets: a day and a week.
+const (
+	maxDailyHours  = 24
+	maxWeeklyHours = 168
+)
+
 // sfDataless is the BSD file flag macOS sets on an iCloud file whose contents
 // have been evicted. Opening such a file blocks while it downloads, which
 // would freeze the menu (menuItems runs on the main thread).
@@ -87,6 +93,15 @@ func workedBeforeToday(lastRun, now time.Time) bool {
 	return !lastRun.IsZero() && lastRun.Before(start)
 }
 
+// weekBounds returns the start of the work week containing now's work day,
+// Monday at dayStartHour, and the work days left in it, today included.
+// Judging by the work day keeps Monday before 4 am in the previous week.
+func weekBounds(now time.Time) (start time.Time, daysLeft int) {
+	day, _ := dayBounds(now)
+	offset := (int(day.Weekday()) + 6) % 7 // days since Monday
+	return day.AddDate(0, 0, -offset), 7 - offset
+}
+
 // logTimestamp is the time a Log & Reset row is dated: when the timer last
 // ran if all its time is from an earlier work day (so clearing out
 // yesterday's timers in the morning files that work under yesterday), the
@@ -133,34 +148,48 @@ func backdatedNote(when time.Time) string {
 	return "Dated " + when.Format("Mon Jan 2 15:04") + ", an earlier work day."
 }
 
-// readTodayLogged sums each project's logged duration for now's work day
-// across paths. Missing files count as zero. Rows are read by position with a
-// variable field count, because files predating the tracked column have a
-// 5-column header followed by 6-column rows. Malformed rows are skipped.
-func readTodayLogged(paths []string, now time.Time) todayLog {
-	tl := todayLog{logged: map[string]time.Duration{}, counts: map[string]int{}}
-	start, end := dayBounds(now)
+// loggedDays holds one todayLog per work day, keyed by the day's start in Unix
+// seconds (time.Time keys would also compare locations), so each day keeps its
+// own order and palette colors.
+type loggedDays map[int64]*todayLog
+
+// day returns the logged time for the work day starting at start.
+func (ld loggedDays) day(start time.Time) todayLog {
+	if tl := ld[start.Unix()]; tl != nil {
+		return *tl
+	}
+	return todayLog{}
+}
+
+// readLogged sums each project's logged duration per work day in [start, end)
+// across paths, reading each file once. The unreadable and dataless flags are
+// file-level, so they are set on flags rather than on any day. Missing files
+// count as zero. Rows are read by position with a variable field count,
+// because files predating the tracked column have a 5-column header followed
+// by 6-column rows. Malformed rows are skipped.
+func readLogged(paths []string, start, end time.Time) (days loggedDays, flags todayLog) {
+	days = loggedDays{}
 	for _, p := range paths {
 		fi, err := os.Stat(p)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			tl.unreadable = true
+			flags.unreadable = true
 			continue
 		}
 		if st, ok := fi.Sys().(*syscall.Stat_t); ok && st.Flags&sfDataless != 0 {
-			tl.dataless = true
+			flags.dataless = true
 			continue
 		}
-		if err := tl.readFile(p, start, end, now.Location()); err != nil {
-			tl.unreadable = true
+		if err := flags.readFile(p, start, end, days); err != nil {
+			flags.unreadable = true
 		}
 	}
-	return tl
+	return days, flags
 }
 
-func (tl *todayLog) readFile(path string, start, end time.Time, loc *time.Location) error {
+func (tl *todayLog) readFile(path string, start, end time.Time, days loggedDays) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -193,7 +222,7 @@ func (tl *todayLog) readFile(path string, start, end time.Time, loc *time.Locati
 		if err != nil {
 			continue // header row or malformed timestamp
 		}
-		ts = ts.In(loc)
+		ts = ts.In(start.Location())
 		if ts.Before(start) || !ts.Before(end) {
 			continue
 		}
@@ -202,11 +231,17 @@ func (tl *todayLog) readFile(path string, start, end time.Time, loc *time.Locati
 			continue
 		}
 		name := strings.TrimSpace(unformulaSafe(rec[1]))
-		if _, seen := tl.counts[name]; !seen {
-			tl.order = append(tl.order, name)
+		ds, _ := dayBounds(ts)
+		day := days[ds.Unix()]
+		if day == nil {
+			day = &todayLog{logged: map[string]time.Duration{}, counts: map[string]int{}}
+			days[ds.Unix()] = day
 		}
-		tl.logged[name] += d
-		tl.counts[name]++
+		if _, seen := day.counts[name]; !seen {
+			day.order = append(day.order, name)
+		}
+		day.logged[name] += d
+		day.counts[name]++
 	}
 }
 
@@ -220,14 +255,14 @@ type projectTotal struct {
 	// fixed by its position among all timers and logged names, so it does
 	// not shift as other projects come and go from the summary.
 	Color int
-	// Excluded marks a timer set not to count toward the Today total.
+	// Excluded marks a timer set not to count toward the totals.
 	Excluded bool
 }
 
 func (p projectTotal) Total() time.Duration { return p.Logged + p.Unlogged }
 
-// dayTotals splits the projects' time into what counts toward the Today
-// total and what is excluded from it.
+// dayTotals splits the projects' time into what counts toward the totals
+// and what is excluded from them.
 func dayTotals(projects []projectTotal) (counted, excluded time.Duration) {
 	for _, p := range projects {
 		if p.Excluded {
@@ -245,12 +280,27 @@ func dayTotals(projects []projectTotal) (counted, excluded time.Duration) {
 func (p projectTotal) ShowRow() bool { return p.Entries > 0 || p.Unlogged >= time.Minute }
 
 // timerTime is a timer's name, its current (not yet logged) elapsed time, its
-// chosen palette color name, if any, and whether it is left out of the total.
+// chosen palette color name, if any, whether it is left out of the totals, and
+// the start of the work day its time counts on.
 type timerTime struct {
 	Name     string
 	Elapsed  time.Duration
 	Color    string
 	Excluded bool
+	Day      time.Time
+}
+
+// onDay returns timers with no time on those whose time counts on another
+// work day; they stay listed so colors and exclusions still apply.
+func onDay(timers []timerTime, day time.Time) []timerTime {
+	out := make([]timerTime, len(timers))
+	for i, t := range timers {
+		if !t.Day.Equal(day) {
+			t.Elapsed = 0
+		}
+		out[i] = t
+	}
+	return out
 }
 
 // buildDaySummary merges timer time with today's logged time, keyed by name.
@@ -320,16 +370,21 @@ func formatCompact(d time.Duration) string {
 	return fmt.Sprintf("%dh %02dm", m/60, m%60)
 }
 
-// headlineText is the Today summary's first line. The remaining/over time is
-// derived from the minute-truncated total, so the two numbers always agree.
-func headlineText(total, target time.Duration, tl todayLog) string {
+// headlineText is a summary line: "Today  7h 08m of 8h · 52m to go". The
+// remaining/over time is derived from the minute-truncated total, so the two
+// numbers always agree. tl carries the log flags, passed for Today only.
+func headlineText(label string, total, target time.Duration, tl todayLog) string {
 	total = total.Truncate(time.Minute)
-	s := fmt.Sprintf("Today  %s of %s", formatHM(total), formatCompact(target))
+	s := fmt.Sprintf("%s  %s of %s", label, formatHM(total), formatCompact(target))
+	under := "to go"
+	if label == "Yesterday" {
+		under = "short" // the day is over, so nothing is still to go
+	}
 	switch diff := target - total; {
 	case diff < time.Minute && diff > -time.Minute:
 		s += " · target reached"
 	case diff > 0:
-		s += fmt.Sprintf(" · %s to go", formatCompact(diff))
+		s += fmt.Sprintf(" · %s %s", formatCompact(diff), under)
 	default:
 		s += fmt.Sprintf(" · %s over", formatCompact(-diff))
 	}
@@ -338,6 +393,17 @@ func headlineText(total, target time.Duration, tl todayLog) string {
 	}
 	if tl.dataless {
 		s += " · some logs not downloaded"
+	}
+	return s
+}
+
+// weekText is the This Week line: the headline plus, while under target, the
+// time per day left (today included) needed to meet it, rounded up to the minute.
+func weekText(total, target time.Duration, daysLeft int) string {
+	s := headlineText("This Week", total, target, todayLog{})
+	if left := int((target - total.Truncate(time.Minute)) / time.Minute); left >= 1 {
+		perDay := time.Duration((left+daysLeft-1)/daysLeft) * time.Minute
+		s += fmt.Sprintf(" · %s/day left", formatCompact(perDay))
 	}
 	return s
 }
@@ -366,14 +432,14 @@ func rowText(p projectTotal) string {
 	return s
 }
 
-// parseTargetHours parses the Daily Target dialog input: decimal hours, with
-// either "." or "," as the decimal separator, in (0, 24].
-func parseTargetHours(s string) (time.Duration, error) {
+// parseTargetHours parses a target dialog's input: decimal hours, with either
+// "." or "," as the decimal separator, in (0, maxHours].
+func parseTargetHours(s string, maxHours float64) (time.Duration, error) {
 	s = strings.ReplaceAll(strings.TrimSpace(s), ",", ".")
 	h, err := strconv.ParseFloat(s, 64)
 	// Written as !(in range) so NaN, which fails every comparison, is rejected.
-	if err != nil || !(h > 0 && h <= 24) {
-		return 0, fmt.Errorf("enter hours between 0 and 24, e.g. 8 or 7.5 (got %q)", s)
+	if err != nil || !(h > 0 && h <= maxHours) {
+		return 0, fmt.Errorf("enter hours between 0 and %g, e.g. 8 or 7.5 (got %q)", maxHours, s)
 	}
 	d := time.Duration(h * float64(time.Hour)).Round(time.Minute)
 	if d < time.Minute {

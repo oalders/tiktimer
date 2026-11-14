@@ -135,7 +135,7 @@ func TestMenuItemsSettingsSubmenu(t *testing.T) {
 	for _, c := range last.Children() {
 		texts = append(texts, c.Text)
 	}
-	want := []string{"Odometer Display", "Daily Target (8h)…", "Copy Log File Path", "Show Log in Finder"}
+	want := []string{"Odometer Display", "Daily Target (8h)…", "Weekly Target (40h, auto)…", "Copy Log File Path", "Show Log in Finder"}
 	if !slices.Equal(texts, want) {
 		t.Errorf("Settings children %q want %q", texts, want)
 	}
@@ -214,7 +214,7 @@ func TestMenuItemsTimerSubmenus(t *testing.T) {
 					t.Errorf("%s: blank child Type %v want Separator", name, c.Type)
 				}
 			}
-			want := []string{"Switch To", "Rename…", "Set Time…", "Log & Reset…", "Pause on Sleep", "Count Toward Today", "Colour", "", "Remove…"}
+			want := []string{"Switch To", "Rename…", "Set Time…", "Log & Reset…", "Pause on Sleep", "Count Toward Totals", "Colour", "", "Remove…"}
 			if !slices.Equal(texts, want) {
 				t.Errorf("%s: children %q want %q", name, texts, want)
 			}
@@ -285,9 +285,9 @@ func TestMenuItemsTimerSubmenus(t *testing.T) {
 		}
 	})
 
-	t.Run("Count Toward Today toggles only its own timer", func(t *testing.T) {
+	t.Run("Count Toward Totals toggles only its own timer", func(t *testing.T) {
 		a := newMenuApp(t)
-		ct := child(t, row(t, a.menuItems(), "Beta"), "Count Toward Today")
+		ct := child(t, row(t, a.menuItems(), "Beta"), "Count Toward Totals")
 		if !ct.State {
 			t.Error("State false want true by default")
 		}
@@ -295,7 +295,7 @@ func TestMenuItemsTimerSubmenus(t *testing.T) {
 		if !a.timers[1].ExcludeFromToday || a.timers[0].ExcludeFromToday {
 			t.Errorf("ExcludeFromToday %v, %v want false, true", a.timers[0].ExcludeFromToday, a.timers[1].ExcludeFromToday)
 		}
-		if child(t, row(t, a.menuItems(), "Beta"), "Count Toward Today").State {
+		if child(t, row(t, a.menuItems(), "Beta"), "Count Toward Totals").State {
 			t.Error("checkmark still shown after excluding")
 		}
 	})

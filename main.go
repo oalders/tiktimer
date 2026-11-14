@@ -289,18 +289,35 @@ func colorItems(a *App, tp *Timer, current string) []menuet.MenuItem {
 	return items
 }
 
-// todayItems builds the Today summary at the top of the menu: a headline,
-// the stacked day bar, and one row per project with a legend dot. Log files
-// are read without holding the mutex. The rows are information only; their
-// click does nothing, but without it AppKit greys them out as disabled.
-func (a *App) todayItems() []menuet.MenuItem {
-	timers, logPath, target := a.todaySnapshot()
-	tl := readTodayLogged(logFilesToRead(logPath), time.Now())
-	projects := buildDaySummary(timers, tl)
+// todayItems builds the summary at the top of the menu: a Today headline,
+// the stacked day bar, one row per project with a legend dot, then Yesterday
+// and This Week lines, the latter with a submenu of each day's total. Log
+// files are read once, without holding the mutex. The rows are information
+// only; their click does nothing, but without it AppKit greys them out as
+// disabled.
+func (a *App) todayItems(now time.Time) []menuet.MenuItem {
+	timers, logPath, target, weekTarget := a.todaySnapshot()
+	today, todayEnd := dayBounds(now)
+	yesterday := today.AddDate(0, 0, -1)
+	weekStart, daysLeft := weekBounds(now)
+	from := weekStart
+	if yesterday.Before(from) {
+		from = yesterday // on Monday, yesterday is in the previous week
+	}
+	days, flags := readLogged(logFilesToRead(logPath), from, todayEnd)
+	tl := days.day(today)
+	tl.unreadable, tl.dataless = flags.unreadable, flags.dataless
+	projects := buildDaySummary(onDay(timers, today), tl)
+	// dayTotal is a work day's counted time, truncated so the week rows add
+	// up to the week line.
+	dayTotal := func(day time.Time) time.Duration {
+		counted, _ := dayTotals(buildDaySummary(onDay(timers, day), days.day(day)))
+		return counted.Truncate(time.Minute)
+	}
 
 	counted, _ := dayTotals(projects)
 	items := []menuet.MenuItem{
-		{Text: headlineText(counted, target, tl), FontWeight: menuet.WeightBold, Clicked: func() {}},
+		{Text: headlineText("Today", counted, target, tl), FontWeight: menuet.WeightBold, Clicked: func() {}},
 		{Image: renderDayBar(projects, target), Clicked: func() {}},
 	}
 	for _, p := range projects {
@@ -313,7 +330,18 @@ func (a *App) todayItems() []menuet.MenuItem {
 			Clicked: func() {},
 		})
 	}
-	return items
+
+	var week time.Duration
+	var weekRows []menuet.MenuItem
+	for day := weekStart; !day.After(today); day = day.AddDate(0, 0, 1) {
+		d := dayTotal(day)
+		week += d
+		weekRows = append(weekRows, menuet.MenuItem{Text: day.Format("Mon") + "  " + formatHM(d), Clicked: func() {}})
+	}
+	return append(items,
+		menuet.MenuItem{Text: headlineText("Yesterday", dayTotal(yesterday), target, todayLog{}), FontWeight: menuet.WeightBold, Clicked: func() {}},
+		menuet.MenuItem{Text: weekText(week, weekTarget, daysLeft), FontWeight: menuet.WeightBold, Children: func() []menuet.MenuItem { return weekRows }},
+	)
 }
 
 // revealLog shows the log in Finder: the file itself for a custom logPath,
@@ -340,29 +368,54 @@ func revealLog(logPath string) {
 	go exec.Command("open", target).Run()
 }
 
-// setDailyTargetPrompt asks for the Today summary's daily target in hours.
-func (a *App) setDailyTargetPrompt() {
-	current := a.dailyTargetValue()
+// targetPrompt asks for a target in hours, up to maxHours. ok is false on
+// Cancel or invalid input (after saying so); with emptyOK, blank input gives 0.
+func targetPrompt(title, info, prefill string, maxHours float64, emptyOK bool) (time.Duration, bool) {
 	response := menuet.App().Alert(menuet.Alert{
-		MessageText:     "Daily Target",
-		InformativeText: "Hours you aim to work per day, across all timers (e.g. 8 or 7.5):",
+		MessageText:     title,
+		InformativeText: info,
 		Buttons:         []string{"Set", "Cancel"},
 		Inputs:          []string{"Hours"},
-		InputValues:     []string{strconv.FormatFloat(current.Hours(), 'f', -1, 64)},
+		InputValues:     []string{prefill},
 	})
 	if response.Button != 0 || len(response.Inputs) == 0 {
-		return
+		return 0, false
 	}
-	d, err := parseTargetHours(response.Inputs[0])
+	if emptyOK && strings.TrimSpace(response.Inputs[0]) == "" {
+		return 0, true
+	}
+	d, err := parseTargetHours(response.Inputs[0], maxHours)
 	if err != nil {
 		menuet.App().Alert(menuet.Alert{
 			MessageText:     "Invalid target",
 			InformativeText: fmt.Sprintf("%v\n\nNothing was changed.", err),
 			Buttons:         []string{"OK"},
 		})
-		return
+		return 0, false
 	}
-	a.setDailyTarget(d)
+	return d, true
+}
+
+// setDailyTargetPrompt asks for the Today summary's daily target in hours.
+func (a *App) setDailyTargetPrompt() {
+	current := strconv.FormatFloat(a.dailyTargetValue().Hours(), 'f', -1, 64)
+	if d, ok := targetPrompt("Daily Target", "Hours you aim to work per day, across all timers (e.g. 8 or 7.5):", current, maxDailyHours, false); ok {
+		a.setDailyTarget(d)
+	}
+}
+
+// setWeeklyTargetPrompt asks for the This Week target in hours; left empty
+// (the prefill while it is defaulted) it follows the daily target.
+func (a *App) setWeeklyTargetPrompt() {
+	a.mu.Lock()
+	current := ""
+	if a.weeklyTarget > 0 {
+		current = strconv.FormatFloat(a.weeklyTarget.Hours(), 'f', -1, 64)
+	}
+	a.mu.Unlock()
+	if d, ok := targetPrompt("Weekly Target", "Hours you aim to work per week, across all timers (e.g. 40 or 37.5). Leave empty to use the daily target × 5:", current, maxWeeklyHours, true); ok {
+		a.setWeeklyTarget(d)
+	}
 }
 
 // toggleWithSound starts or stops the active timer and plays the matching cue.
@@ -377,7 +430,7 @@ func (a *App) toggleWithSound() {
 func (a *App) menuItems() []menuet.MenuItem {
 	// Built before locking: it snapshots state under the mutex itself and then
 	// reads the log files unlocked.
-	today := a.todayItems()
+	today := a.todayItems(time.Now())
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -438,7 +491,7 @@ func (a *App) menuItems() []menuet.MenuItem {
 			{Text: "Set Time…", Clicked: func() { a.setTimerTime(tp) }},
 			logItem,
 			{Text: "Pause on Sleep", State: t.PauseOnSleep, Clicked: func() { a.togglePauseOnSleep(tp) }},
-			{Text: "Count Toward Today", State: !t.ExcludeFromToday, Clicked: func() { a.toggleExcludeFromToday(tp) }},
+			{Text: "Count Toward Totals", State: !t.ExcludeFromToday, Clicked: func() { a.toggleExcludeFromToday(tp) }},
 			{Text: "Colour", Children: func() []menuet.MenuItem { return colorItems(a, tp, colour) }},
 			{Type: menuet.Separator},
 			{Text: "Remove…", Clicked: func() { a.confirmRemove(tp, askRemove) }},
@@ -470,9 +523,14 @@ func (a *App) menuItems() []menuet.MenuItem {
 
 	// Settings are grouped apart from the everyday actions; menuet adds Start at
 	// Login and Quit right after this.
+	weekly := formatCompact(a.weekTargetLocked())
+	if a.weeklyTarget <= 0 {
+		weekly += ", auto" // follows the daily target
+	}
 	settings := []menuet.MenuItem{
 		{Text: "Odometer Display", State: a.display == DisplayOdometer, Clicked: a.toggleDisplay},
 		{Text: fmt.Sprintf("Daily Target (%s)…", formatCompact(a.targetLocked())), Clicked: a.setDailyTargetPrompt},
+		{Text: fmt.Sprintf("Weekly Target (%s)…", weekly), Clicked: a.setWeeklyTargetPrompt},
 		{Text: "Copy Log File Path", Clicked: a.copyLogPath},
 		{Text: "Show Log in Finder", Clicked: func() { revealLog(a.logPath) }},
 	}

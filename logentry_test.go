@@ -301,7 +301,7 @@ func TestAppendLogRowGuardsFormulas(t *testing.T) {
 		t.Errorf("name and note should be guarded:\n%s", raw)
 	}
 	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.FixedZone("EDT", -4*3600))
-	if tl := readTodayLogged([]string{path}, now); tl.logged["-Acme"] != time.Hour {
+	if tl := readDay([]string{path}, now); tl.logged["-Acme"] != time.Hour {
 		t.Errorf("the summary should read the guarded name back as %q: %+v", "-Acme", tl.logged)
 	}
 }

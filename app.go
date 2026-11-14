@@ -26,8 +26,8 @@ type Timer struct {
 	// Color names the projectPalette entry for this timer in the Today
 	// summary. Empty means the color its position gives it.
 	Color string `json:"color,omitempty"`
-	// ExcludeFromToday leaves this timer's time out of the Today total; it
-	// still appears in the Today rows and bar.
+	// ExcludeFromToday leaves this timer's time out of the Today, Yesterday
+	// and This Week totals; it still appears in the Today rows and bar.
 	ExcludeFromToday bool `json:"excludeFromToday,omitempty"`
 }
 
@@ -48,8 +48,10 @@ type App struct {
 	logPath  string // CSV destination; empty means the iCloud default
 	// dailyTarget is the Today summary's goal; 0 means defaultDailyTarget.
 	dailyTarget time.Duration
-	home        string // base dir for the state file; empty means the OS home dir
-	saveWG      sync.WaitGroup
+	// weeklyTarget is the This Week goal; 0 means five daily targets.
+	weeklyTarget time.Duration
+	home         string // base dir for the state file; empty means the OS home dir
+	saveWG       sync.WaitGroup
 	// saveMu orders snapshot+rename so an older async save can't land last.
 	saveMu sync.Mutex
 	// autoPaused records that pauseForSleep stopped the timer, so resumeAfterWake
@@ -64,6 +66,8 @@ type saveData struct {
 	LogPath string      `json:"logPath,omitempty"`
 	// DailyTargetHours is the Today summary's goal in hours; 0 means 8.
 	DailyTargetHours float64 `json:"dailyTargetHours,omitempty"`
+	// WeeklyTargetHours is the This Week goal in hours; 0 means daily × 5.
+	WeeklyTargetHours float64 `json:"weeklyTargetHours,omitempty"`
 }
 
 func newApp() *App {
@@ -82,7 +86,7 @@ func (a *App) save() {
 	a.saveMu.Lock()
 	defer a.saveMu.Unlock()
 	a.mu.Lock()
-	data := saveData{Active: a.active, Display: a.display, LogPath: a.logPath, DailyTargetHours: a.dailyTarget.Hours()}
+	data := saveData{Active: a.active, Display: a.display, LogPath: a.logPath, DailyTargetHours: a.dailyTarget.Hours(), WeeklyTargetHours: a.weeklyTarget.Hours()}
 	for _, t := range a.timers {
 		data.Timers = append(data.Timers, *t)
 	}
@@ -145,8 +149,11 @@ func (a *App) load() {
 	a.logPath = data.LogPath
 	// The save file can be hand-edited; an out-of-range target falls back to
 	// the default rather than skewing the Today summary.
-	if h := data.DailyTargetHours; h > 0 && h <= 24 {
+	if h := data.DailyTargetHours; h > 0 && h <= maxDailyHours {
 		a.dailyTarget = time.Duration(h * float64(time.Hour)).Round(time.Minute)
+	}
+	if h := data.WeeklyTargetHours; h > 0 && h <= maxWeeklyHours {
+		a.weeklyTarget = time.Duration(h * float64(time.Hour)).Round(time.Minute)
 	}
 }
 
@@ -287,7 +294,7 @@ func (a *App) togglePauseOnSleep(target *Timer) {
 	a.updateTimer(target, func(t *Timer) { t.PauseOnSleep = !t.PauseOnSleep })
 }
 
-// toggleExcludeFromToday flips whether a timer counts toward the Today total.
+// toggleExcludeFromToday flips whether a timer counts toward the totals.
 func (a *App) toggleExcludeFromToday(target *Timer) {
 	a.updateTimer(target, func(t *Timer) { t.ExcludeFromToday = !t.ExcludeFromToday })
 }
@@ -516,26 +523,45 @@ func (a *App) setDailyTarget(d time.Duration) {
 	a.saveAsync()
 }
 
-// todaySnapshot copies what the Today summary needs from app state, so the
-// log files can be read without holding the mutex: every timer's unlogged
-// time (including in-flight time for the running timer), the log path, and
-// the daily target.
-func (a *App) todaySnapshot() (timers []timerTime, logPath string, target time.Duration) {
+// weekTargetLocked returns the weekly target, defaulting to five daily
+// targets so it follows the daily one. Callers hold a.mu.
+func (a *App) weekTargetLocked() time.Duration {
+	if a.weeklyTarget <= 0 {
+		return 5 * a.targetLocked()
+	}
+	return a.weeklyTarget
+}
+
+// setWeeklyTarget stores a new weekly target (0 restores the default) and
+// persists it.
+func (a *App) setWeeklyTarget(d time.Duration) {
+	a.mu.Lock()
+	a.weeklyTarget = d
+	a.mu.Unlock()
+	a.saveAsync()
+}
+
+// todaySnapshot copies what the summary needs from app state, so the log
+// files can be read without holding the mutex: every timer's unlogged time
+// (including in-flight time for the running timer) and the work day it counts
+// on, the log path, and the daily and weekly targets.
+func (a *App) todaySnapshot() (timers []timerTime, logPath string, target, weekTarget time.Duration) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := time.Now()
+	today, _ := dayBounds(now)
 	for i, t := range a.timers {
 		acc := t.Accumulated
+		day := today
 		if i == a.active && a.running {
 			acc += now.Sub(a.lastTick)
 		} else if workedBeforeToday(t.LastRun, now) {
-			// Leftover from an earlier day; it is dated then when logged. The
-			// timer stays in the list so palette colors do not shift.
-			acc = 0
+			// Leftover from an earlier day counts on the day Log & Reset dates it.
+			day, _ = dayBounds(t.LastRun.In(now.Location()))
 		}
-		timers = append(timers, timerTime{Name: t.Name, Elapsed: acc, Color: t.Color, Excluded: t.ExcludeFromToday})
+		timers = append(timers, timerTime{Name: t.Name, Elapsed: acc, Color: t.Color, Excluded: t.ExcludeFromToday, Day: day})
 	}
-	return timers, a.logPath, a.targetLocked()
+	return timers, a.logPath, a.targetLocked(), a.weekTargetLocked()
 }
 
 // logDirReady reports an error when the log destination is not usable. For the
