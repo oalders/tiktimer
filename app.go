@@ -26,8 +26,8 @@ type Timer struct {
 	// Color names the projectPalette entry for this timer in the Today
 	// summary. Empty means the color its position gives it.
 	Color string `json:"color,omitempty"`
-	// ExcludeFromToday leaves this timer's time out of the Today total; it
-	// still appears in the Today rows and bar.
+	// ExcludeFromToday leaves this timer's time out of the Today, Yesterday
+	// and This Week totals; it still appears in the Today rows and bar.
 	ExcludeFromToday bool `json:"excludeFromToday,omitempty"`
 }
 
@@ -287,7 +287,7 @@ func (a *App) togglePauseOnSleep(target *Timer) {
 	a.updateTimer(target, func(t *Timer) { t.PauseOnSleep = !t.PauseOnSleep })
 }
 
-// toggleExcludeFromToday flips whether a timer counts toward the Today total.
+// toggleExcludeFromToday flips whether a timer counts toward the totals.
 func (a *App) toggleExcludeFromToday(target *Timer) {
 	a.updateTimer(target, func(t *Timer) { t.ExcludeFromToday = !t.ExcludeFromToday })
 }
@@ -516,24 +516,25 @@ func (a *App) setDailyTarget(d time.Duration) {
 	a.saveAsync()
 }
 
-// todaySnapshot copies what the Today summary needs from app state, so the
-// log files can be read without holding the mutex: every timer's unlogged
-// time (including in-flight time for the running timer), the log path, and
-// the daily target.
-func (a *App) todaySnapshot() (timers []timerTime, logPath string, target time.Duration) {
+// todaySnapshot copies what the summary needs from app state, so the log
+// files can be read without holding the mutex: every timer's unlogged time
+// (including in-flight time for the running timer) and the work day it counts
+// on, the log path, and the daily target. now is the caller's, so the days
+// here match the ones the caller buckets the logs into.
+func (a *App) todaySnapshot(now time.Time) (timers []timerTime, logPath string, target time.Duration) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	now := time.Now()
+	today, _ := dayBounds(now)
 	for i, t := range a.timers {
 		acc := t.Accumulated
+		day := today
 		if i == a.active && a.running {
 			acc += now.Sub(a.lastTick)
 		} else if workedBeforeToday(t.LastRun, now) {
-			// Leftover from an earlier day; it is dated then when logged. The
-			// timer stays in the list so palette colors do not shift.
-			acc = 0
+			// Leftover from an earlier day counts on the day Log & Reset dates it.
+			day, _ = dayBounds(t.LastRun.In(now.Location()))
 		}
-		timers = append(timers, timerTime{Name: t.Name, Elapsed: acc, Color: t.Color, Excluded: t.ExcludeFromToday})
+		timers = append(timers, timerTime{Name: t.Name, Elapsed: acc, Color: t.Color, Excluded: t.ExcludeFromToday, Day: day})
 	}
 	return timers, a.logPath, a.targetLocked()
 }

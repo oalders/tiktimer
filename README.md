@@ -55,9 +55,17 @@ project (solid = logged, lighter = still on a timer), and one row per project
 with its entry count. A day runs from 4 am to 4 am, so late-night work counts
 toward the evening it belongs to. It sums today's rows from every machine's
 log in the iCloud `tiktimer` folder (or your custom `logPath`), plus whatever
-is on your timers now.
+is on your timers now. Durations in the menu read hours and minutes, e.g.
+`08:32` or `48:03`; only the menu-bar title shows seconds.
 
-Time left on a timer from an earlier day doesn't count toward today. When you
+Below the project rows come the **Yesterday** and **This Week** totals, e.g.
+`08:32 (yesterday)` and `48:03 (this week)`, each followed by one row per
+counted project, longest first (e.g. `- 40:05 (Muevelo)`). Each total is the
+sum of its project rows. A week runs from Monday 4 am to the next Monday 4
+am. Hover This Week for each day's total so far, e.g. `08:05 (Mon)`.
+
+Time left on a timer from an earlier day doesn't count toward today; it counts
+on the day the timer last ran (in Yesterday and This Week). When you
 Log & Reset such a timer, the row is dated when the timer last ran, so
 clearing out yesterday's timers in the morning files that work under
 yesterday. A timer that also ran today is dated now, unless you press **Log &
@@ -67,8 +75,9 @@ seconds), which dates the row 23:59 on the previous day.
 The dropdown menu also lets you:
 
 - Act on any timer from its submenu (hover a timer name): Switch To, Rename,
-  Set Time, Log & Reset, Pause on Sleep, Count Toward Today (untick to leave
-  it out of the Today total), Colour (its Today bar color), or Remove it
+  Set Time, Log & Reset, Pause on Sleep, Count Toward Totals (untick to leave
+  it out of the Today, Yesterday and This Week totals), Colour (its Today bar
+  color), or Remove it
 - Log & Reset any timer: write a CSV row with a note, then take that time off
   the timer, without pausing or switching away from the timer that's
   running. A name or note starting with `=`, `+`, `-` or `@` is written with

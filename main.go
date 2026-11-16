@@ -1,12 +1,14 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -265,7 +267,7 @@ func (a *App) setTimerTime(target *Timer) {
 func askRemove(name string, elapsed time.Duration) bool {
 	response := menuet.App().Alert(menuet.Alert{
 		MessageText:     fmt.Sprintf("Remove “%s”?", name),
-		InformativeText: fmt.Sprintf("%s of unlogged time will be lost.", formatDuration(elapsed, false)),
+		InformativeText: fmt.Sprintf("%s of unlogged time will be lost.", formatHM(elapsed)),
 		Buttons:         []string{"Cancel", "Remove"},
 	})
 	return response.Button == 1
@@ -289,14 +291,25 @@ func colorItems(a *App, tp *Timer, current string) []menuet.MenuItem {
 	return items
 }
 
-// todayItems builds the Today summary at the top of the menu: a headline,
-// the stacked day bar, and one row per project with a legend dot. Log files
-// are read without holding the mutex. The rows are information only; their
-// click does nothing, but without it AppKit greys them out as disabled.
-func (a *App) todayItems() []menuet.MenuItem {
-	timers, logPath, target := a.todaySnapshot()
-	tl := readTodayLogged(logFilesToRead(logPath), time.Now())
-	projects := buildDaySummary(timers, tl)
+// todayItems builds the summary at the top of the menu: a Today headline,
+// the stacked day bar, one row per project with a legend dot, then Yesterday
+// and This Week lines, each followed by its per-project breakdown, This Week
+// with a submenu of each day's total. Log files are read once, without
+// holding the mutex. The rows are information only; their click does
+// nothing, but without it AppKit greys them out as disabled.
+func (a *App) todayItems(now time.Time) []menuet.MenuItem {
+	timers, logPath, target := a.todaySnapshot(now)
+	today, todayEnd := dayBounds(now)
+	yesterday := today.AddDate(0, 0, -1)
+	weekStart := weekBounds(now)
+	from := weekStart
+	if yesterday.Before(from) {
+		from = yesterday // on Monday, yesterday is in the previous week
+	}
+	days, flags := readLogged(logFilesToRead(logPath), from, todayEnd)
+	tl := days.day(today)
+	tl.logFlags = flags
+	projects := buildDaySummary(onDay(timers, today), tl)
 
 	counted, _ := dayTotals(projects)
 	items := []menuet.MenuItem{
@@ -313,7 +326,47 @@ func (a *App) todayItems() []menuet.MenuItem {
 			Clicked: func() {},
 		})
 	}
-	return items
+
+	var dayRows []menuet.MenuItem
+	for day := weekStart; !day.After(today); day = day.AddDate(0, 0, 1) {
+		counted, _ := dayTotals(buildDaySummary(onDay(timers, day), days.day(day)))
+		dayRows = append(dayRows, menuet.MenuItem{Text: formatHM(counted) + " (" + day.Format("Mon") + ")", Clicked: func() {}})
+	}
+	yTotal, yRows := breakdown(timers, days, yesterday, yesterday)
+	wTotal, wRows := breakdown(timers, days, weekStart, today)
+	items = append(items, menuet.MenuItem{Text: formatHM(yTotal) + " (yesterday)", FontWeight: menuet.WeightBold, Clicked: func() {}})
+	items = append(items, yRows...)
+	items = append(items, menuet.MenuItem{Text: formatHM(wTotal) + " (this week)", FontWeight: menuet.WeightBold, Children: func() []menuet.MenuItem { return dayRows }})
+	return append(items, wRows...)
+}
+
+// breakdown sums each counted project's time over the work days from first to
+// last into one "   - 40:05 (Acme)" row, longest first. total is the sum of
+// the minute-truncated rows, so the breakdown always adds up to its line.
+func breakdown(timers []timerTime, days loggedDays, first, last time.Time) (total time.Duration, rows []menuet.MenuItem) {
+	byName := map[string]time.Duration{}
+	for day := first; !day.After(last); day = day.AddDate(0, 0, 1) {
+		for _, p := range buildDaySummary(onDay(timers, day), days.day(day)) {
+			if !p.Excluded {
+				byName[p.Name] += p.Total()
+			}
+		}
+	}
+	var names []string
+	for name, d := range byName {
+		byName[name] = d.Truncate(time.Minute)
+		if byName[name] > 0 { // a row under a minute would read 00:00
+			names = append(names, name)
+		}
+	}
+	slices.SortFunc(names, func(x, y string) int {
+		return cmp.Or(cmp.Compare(byName[y], byName[x]), cmp.Compare(x, y))
+	})
+	for _, name := range names {
+		total += byName[name]
+		rows = append(rows, menuet.MenuItem{Text: "   - " + formatHM(byName[name]) + " (" + name + ")", Clicked: func() {}})
+	}
+	return total, rows
 }
 
 // revealLog shows the log in Finder: the file itself for a custom logPath,
@@ -377,7 +430,7 @@ func (a *App) toggleWithSound() {
 func (a *App) menuItems() []menuet.MenuItem {
 	// Built before locking: it snapshots state under the mutex itself and then
 	// reads the log files unlocked.
-	today := a.todayItems()
+	today := a.todayItems(time.Now())
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -438,14 +491,14 @@ func (a *App) menuItems() []menuet.MenuItem {
 			{Text: "Set Time…", Clicked: func() { a.setTimerTime(tp) }},
 			logItem,
 			{Text: "Pause on Sleep", State: t.PauseOnSleep, Clicked: func() { a.togglePauseOnSleep(tp) }},
-			{Text: "Count Toward Today", State: !t.ExcludeFromToday, Clicked: func() { a.toggleExcludeFromToday(tp) }},
+			{Text: "Count Toward Totals", State: !t.ExcludeFromToday, Clicked: func() { a.toggleExcludeFromToday(tp) }},
 			{Text: "Colour", Children: func() []menuet.MenuItem { return colorItems(a, tp, colour) }},
 			{Type: menuet.Separator},
 			{Text: "Remove…", Clicked: func() { a.confirmRemove(tp, askRemove) }},
 		}
 
 		items = append(items, menuet.MenuItem{
-			Text:     fmt.Sprintf("%s  %s", t.Name, formatDuration(acc, false)),
+			Text:     fmt.Sprintf("%s  %s", t.Name, formatHM(acc)),
 			State:    i == a.active,
 			Children: func() []menuet.MenuItem { return children },
 		})

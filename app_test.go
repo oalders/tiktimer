@@ -167,6 +167,19 @@ func TestMenuItemsSettingsSubmenu(t *testing.T) {
 	}
 }
 
+func TestMenuItemsTimerRowHasNoSeconds(t *testing.T) {
+	a := newTestApp(t, 1)
+	a.logPath = filepath.Join(t.TempDir(), "log.csv") // keep off the real iCloud log
+	a.timers[0].Name = "Acme"
+	a.timers[0].Accumulated = time.Hour + 2*time.Minute + 3*time.Second
+	for _, it := range a.menuItems() {
+		if it.Text == "Acme  01:02" && it.Children != nil {
+			return
+		}
+	}
+	t.Errorf("no Acme timer row reading \"Acme  01:02\"")
+}
+
 func TestMenuItemsTimerSubmenus(t *testing.T) {
 	newMenuApp := func(t *testing.T) *App {
 		a := newTestApp(t, 2)
@@ -214,7 +227,7 @@ func TestMenuItemsTimerSubmenus(t *testing.T) {
 					t.Errorf("%s: blank child Type %v want Separator", name, c.Type)
 				}
 			}
-			want := []string{"Switch To", "Rename…", "Set Time…", "Log & Reset…", "Pause on Sleep", "Count Toward Today", "Colour", "", "Remove…"}
+			want := []string{"Switch To", "Rename…", "Set Time…", "Log & Reset…", "Pause on Sleep", "Count Toward Totals", "Colour", "", "Remove…"}
 			if !slices.Equal(texts, want) {
 				t.Errorf("%s: children %q want %q", name, texts, want)
 			}
@@ -285,9 +298,9 @@ func TestMenuItemsTimerSubmenus(t *testing.T) {
 		}
 	})
 
-	t.Run("Count Toward Today toggles only its own timer", func(t *testing.T) {
+	t.Run("Count Toward Totals toggles only its own timer", func(t *testing.T) {
 		a := newMenuApp(t)
-		ct := child(t, row(t, a.menuItems(), "Beta"), "Count Toward Today")
+		ct := child(t, row(t, a.menuItems(), "Beta"), "Count Toward Totals")
 		if !ct.State {
 			t.Error("State false want true by default")
 		}
@@ -295,7 +308,7 @@ func TestMenuItemsTimerSubmenus(t *testing.T) {
 		if !a.timers[1].ExcludeFromToday || a.timers[0].ExcludeFromToday {
 			t.Errorf("ExcludeFromToday %v, %v want false, true", a.timers[0].ExcludeFromToday, a.timers[1].ExcludeFromToday)
 		}
-		if child(t, row(t, a.menuItems(), "Beta"), "Count Toward Today").State {
+		if child(t, row(t, a.menuItems(), "Beta"), "Count Toward Totals").State {
 			t.Error("checkmark still shown after excluding")
 		}
 	})
