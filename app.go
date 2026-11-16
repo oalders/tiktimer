@@ -48,10 +48,8 @@ type App struct {
 	logPath  string // CSV destination; empty means the iCloud default
 	// dailyTarget is the Today summary's goal; 0 means defaultDailyTarget.
 	dailyTarget time.Duration
-	// weeklyTarget is the This Week goal; 0 means five daily targets.
-	weeklyTarget time.Duration
-	home         string // base dir for the state file; empty means the OS home dir
-	saveWG       sync.WaitGroup
+	home        string // base dir for the state file; empty means the OS home dir
+	saveWG      sync.WaitGroup
 	// saveMu orders snapshot+rename so an older async save can't land last.
 	saveMu sync.Mutex
 	// autoPaused records that pauseForSleep stopped the timer, so resumeAfterWake
@@ -66,8 +64,6 @@ type saveData struct {
 	LogPath string      `json:"logPath,omitempty"`
 	// DailyTargetHours is the Today summary's goal in hours; 0 means 8.
 	DailyTargetHours float64 `json:"dailyTargetHours,omitempty"`
-	// WeeklyTargetHours is the This Week goal in hours; 0 means daily × 5.
-	WeeklyTargetHours float64 `json:"weeklyTargetHours,omitempty"`
 }
 
 func newApp() *App {
@@ -86,7 +82,7 @@ func (a *App) save() {
 	a.saveMu.Lock()
 	defer a.saveMu.Unlock()
 	a.mu.Lock()
-	data := saveData{Active: a.active, Display: a.display, LogPath: a.logPath, DailyTargetHours: a.dailyTarget.Hours(), WeeklyTargetHours: a.weeklyTarget.Hours()}
+	data := saveData{Active: a.active, Display: a.display, LogPath: a.logPath, DailyTargetHours: a.dailyTarget.Hours()}
 	for _, t := range a.timers {
 		data.Timers = append(data.Timers, *t)
 	}
@@ -149,11 +145,8 @@ func (a *App) load() {
 	a.logPath = data.LogPath
 	// The save file can be hand-edited; an out-of-range target falls back to
 	// the default rather than skewing the Today summary.
-	if h := data.DailyTargetHours; h > 0 && h <= maxDailyHours {
+	if h := data.DailyTargetHours; h > 0 && h <= 24 {
 		a.dailyTarget = time.Duration(h * float64(time.Hour)).Round(time.Minute)
-	}
-	if h := data.WeeklyTargetHours; h > 0 && h <= maxWeeklyHours {
-		a.weeklyTarget = time.Duration(h * float64(time.Hour)).Round(time.Minute)
 	}
 }
 
@@ -523,30 +516,12 @@ func (a *App) setDailyTarget(d time.Duration) {
 	a.saveAsync()
 }
 
-// weekTargetLocked returns the weekly target, defaulting to five daily
-// targets so it follows the daily one. Callers hold a.mu.
-func (a *App) weekTargetLocked() time.Duration {
-	if a.weeklyTarget <= 0 {
-		return 5 * a.targetLocked()
-	}
-	return a.weeklyTarget
-}
-
-// setWeeklyTarget stores a new weekly target (0 restores the default) and
-// persists it.
-func (a *App) setWeeklyTarget(d time.Duration) {
-	a.mu.Lock()
-	a.weeklyTarget = d
-	a.mu.Unlock()
-	a.saveAsync()
-}
-
 // todaySnapshot copies what the summary needs from app state, so the log
 // files can be read without holding the mutex: every timer's unlogged time
 // (including in-flight time for the running timer) and the work day it counts
-// on, the log path, and the daily and weekly targets. now is the caller's, so
-// the days here match the ones the caller buckets the logs into.
-func (a *App) todaySnapshot(now time.Time) (timers []timerTime, logPath string, target, weekTarget time.Duration) {
+// on, the log path, and the daily target. now is the caller's, so the days
+// here match the ones the caller buckets the logs into.
+func (a *App) todaySnapshot(now time.Time) (timers []timerTime, logPath string, target time.Duration) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	today, _ := dayBounds(now)
@@ -561,7 +536,7 @@ func (a *App) todaySnapshot(now time.Time) (timers []timerTime, logPath string, 
 		}
 		timers = append(timers, timerTime{Name: t.Name, Elapsed: acc, Color: t.Color, Excluded: t.ExcludeFromToday, Day: day})
 	}
-	return timers, a.logPath, a.targetLocked(), a.weekTargetLocked()
+	return timers, a.logPath, a.targetLocked()
 }
 
 // logDirReady reports an error when the log destination is not usable. For the

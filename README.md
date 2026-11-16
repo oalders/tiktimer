@@ -55,13 +55,14 @@ project (solid = logged, lighter = still on a timer), and one row per project
 with its entry count. A day runs from 4 am to 4 am, so late-night work counts
 toward the evening it belongs to. It sums today's rows from every machine's
 log in the iCloud `tiktimer` folder (or your custom `logPath`), plus whatever
-is on your timers now.
+is on your timers now. Durations in the menu read hours and minutes, e.g.
+`08:32` or `48:03`; only the menu-bar title shows seconds.
 
-Below the project rows, **Yesterday** shows that day's total against your
-daily target, and **This Week** the week's total against your weekly target
-with the time per day you still need, counting today (e.g. `5h 37m/day
-left`). A week runs from Monday 4 am to the next Monday 4 am. Hover This Week
-for each day's total so far.
+Below the project rows come the **Yesterday** and **This Week** totals, e.g.
+`08:32 (yesterday)` and `48:03 (this week)`, each followed by one row per
+counted project, longest first (e.g. `- 40:05 (Muevelo)`). Each total is the
+sum of its project rows. A week runs from Monday 4 am to the next Monday 4
+am. Hover This Week for each day's total so far, e.g. `08:05 (Mon)`.
 
 Time left on a timer from an earlier day doesn't count toward today; it counts
 on the day the timer last ran (in Yesterday and This Week). When you
@@ -83,9 +84,7 @@ The dropdown menu also lets you:
   a leading `'` so a spreadsheet won't run it as a formula
 - Add timers
 - Change settings from the **Settings** submenu: Odometer Display, the
-  Daily Target (default 8h), the Weekly Target (default the daily target × 5;
-  leave it empty to go back to that), Copy Log File Path, and Show Log in
-  Finder
+  Daily Target (default 8h), Copy Log File Path, and Show Log in Finder
 
 ## Development
 

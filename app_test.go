@@ -133,13 +133,9 @@ func TestMenuItemsSettingsSubmenu(t *testing.T) {
 	}
 	var texts []string
 	for _, c := range last.Children() {
-		// TestWeeklyTarget checks this label as the target changes.
-		if strings.HasPrefix(c.Text, "Weekly Target") {
-			c.Text = "Weekly Target"
-		}
 		texts = append(texts, c.Text)
 	}
-	want := []string{"Odometer Display", "Daily Target (8h)…", "Weekly Target", "Copy Log File Path", "Show Log in Finder"}
+	want := []string{"Odometer Display", "Daily Target (8h)…", "Copy Log File Path", "Show Log in Finder"}
 	if !slices.Equal(texts, want) {
 		t.Errorf("Settings children %q want %q", texts, want)
 	}
@@ -169,6 +165,19 @@ func TestMenuItemsSettingsSubmenu(t *testing.T) {
 	if !odometer().State {
 		t.Error("Odometer Display is unchecked in odometer mode")
 	}
+}
+
+func TestMenuItemsTimerRowHasNoSeconds(t *testing.T) {
+	a := newTestApp(t, 1)
+	a.logPath = filepath.Join(t.TempDir(), "log.csv") // keep off the real iCloud log
+	a.timers[0].Name = "Acme"
+	a.timers[0].Accumulated = time.Hour + 2*time.Minute + 3*time.Second
+	for _, it := range a.menuItems() {
+		if it.Text == "Acme  01:02" && it.Children != nil {
+			return
+		}
+	}
+	t.Errorf("no Acme timer row reading \"Acme  01:02\"")
 }
 
 func TestMenuItemsTimerSubmenus(t *testing.T) {

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/oalders/menuet"
 )
 
 func writeFile(t *testing.T, path, content string) {
@@ -255,11 +257,15 @@ func TestBuildDaySummaryTimerOnly(t *testing.T) {
 }
 
 func TestFormatHMAndCompact(t *testing.T) {
-	if got := formatHM(7*time.Hour + 8*time.Minute + 59*time.Second); got != "7h 08m" {
-		t.Errorf("formatHM = %q", got)
-	}
-	if got := formatHM(-time.Minute); got != "0h 00m" {
-		t.Errorf("formatHM negative = %q", got)
+	for d, want := range map[time.Duration]string{
+		7*time.Hour + 8*time.Minute + 59*time.Second: "07:08",
+		7*time.Minute + 30*time.Second:               "00:07",
+		123*time.Hour + 4*time.Minute:                "123:04",
+		-time.Minute:                                 "00:00",
+	} {
+		if got := formatHM(d); got != want {
+			t.Errorf("formatHM(%v) = %q, want %q", d, got, want)
+		}
 	}
 	for d, want := range map[time.Duration]string{
 		8 * time.Hour:                   "8h",
@@ -278,19 +284,19 @@ func TestHeadlineText(t *testing.T) {
 	cases := []struct {
 		name  string
 		total time.Duration
-		flags logFlags
+		tl    todayLog
 		want  string
 	}{
 		// 7h08m59s truncates to 7h08m, so 52m to go (never 51m).
-		{"under", 7*time.Hour + 8*time.Minute + 59*time.Second, logFlags{}, "Today  7h 08m of 8h · 52m to go"},
-		{"just under", 7*time.Hour + 59*time.Minute + 30*time.Second, logFlags{}, "Today  7h 59m of 8h · 1m to go"},
-		{"exact", target, logFlags{}, "Today  8h 00m of 8h · target reached"},
-		{"over", 9*time.Hour + 15*time.Minute, logFlags{}, "Today  9h 15m of 8h · 1h 15m over"},
-		{"flags", 0, logFlags{unreadable: true, dataless: true}, "Today  0h 00m of 8h · 8h to go · log unreadable · some logs not downloaded"},
+		{"under", 7*time.Hour + 8*time.Minute + 59*time.Second, todayLog{}, "Today  07:08 of 8h · 00:52 to go"},
+		{"just under", 7*time.Hour + 59*time.Minute + 30*time.Second, todayLog{}, "Today  07:59 of 8h · 00:01 to go"},
+		{"exact", target, todayLog{}, "Today  08:00 of 8h · target reached"},
+		{"over", 9*time.Hour + 15*time.Minute, todayLog{}, "Today  09:15 of 8h · 01:15 over"},
+		{"flags", 0, todayLog{logFlags: logFlags{unreadable: true, dataless: true}}, "Today  00:00 of 8h · 08:00 to go · log unreadable · some logs not downloaded"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := headlineText("Today", c.total, target, "to go", c.flags); got != c.want {
+			if got := headlineText(c.total, target, c.tl); got != c.want {
 				t.Errorf("got  %q\nwant %q", got, c.want)
 			}
 		})
@@ -302,12 +308,12 @@ func TestRowText(t *testing.T) {
 		p    projectTotal
 		want string
 	}{
-		{projectTotal{Name: "Acme", Logged: 4*time.Hour + 27*time.Minute, Unlogged: 23 * time.Minute, Entries: 5}, "Acme  4h 50m  (5 entries, 23m unlogged)"},
-		{projectTotal{Name: "Globex", Logged: 30 * time.Minute, Entries: 1}, "Globex  0h 30m  (1 entry)"},
-		{projectTotal{Name: "New", Unlogged: 90 * time.Minute}, "New  1h 30m  (1h 30m unlogged)"},
-		{projectTotal{Name: "Acme", Logged: time.Hour, Unlogged: 10 * time.Second, Entries: 2}, "Acme  1h 00m  (2 entries)"},
-		{projectTotal{Name: "Blog", Unlogged: 30 * time.Minute, Excluded: true}, "Blog  0h 30m  (30m unlogged, not counted)"},
-		{projectTotal{Name: "Blog", Logged: 30 * time.Second, Entries: 1, Excluded: true}, "Blog  0h 00m  (1 entry, not counted)"},
+		{projectTotal{Name: "Acme", Logged: 4*time.Hour + 27*time.Minute, Unlogged: 23 * time.Minute, Entries: 5}, "Acme  04:50  (5 entries, 00:23 unlogged)"},
+		{projectTotal{Name: "Globex", Logged: 30 * time.Minute, Entries: 1}, "Globex  00:30  (1 entry)"},
+		{projectTotal{Name: "New", Unlogged: 90 * time.Minute}, "New  01:30  (01:30 unlogged)"},
+		{projectTotal{Name: "Acme", Logged: time.Hour, Unlogged: 10 * time.Second, Entries: 2}, "Acme  01:00  (2 entries)"},
+		{projectTotal{Name: "Blog", Unlogged: 30 * time.Minute, Excluded: true}, "Blog  00:30  (00:30 unlogged, not counted)"},
+		{projectTotal{Name: "Blog", Logged: 30 * time.Second, Entries: 1, Excluded: true}, "Blog  00:00  (1 entry, not counted)"},
 	}
 	for _, c := range cases {
 		if got := rowText(c.p); got != c.want {
@@ -323,21 +329,15 @@ func TestParseTargetHours(t *testing.T) {
 		"7,5":   7*time.Hour + 30*time.Minute,
 		"24":    24 * time.Hour,
 	} {
-		got, err := parseTargetHours(in, maxDailyHours)
+		got, err := parseTargetHours(in)
 		if err != nil || got != want {
 			t.Errorf("parseTargetHours(%q) = %v, %v; want %v", in, got, err, want)
 		}
 	}
 	for _, in := range []string{"", "0", "-1", "25", "eight", "nan", "NaN", "inf", "0.004"} {
-		if _, err := parseTargetHours(in, maxDailyHours); err == nil {
+		if _, err := parseTargetHours(in); err == nil {
 			t.Errorf("parseTargetHours(%q) should fail", in)
 		}
-	}
-	if got, err := parseTargetHours("168", maxWeeklyHours); err != nil || got != 168*time.Hour {
-		t.Errorf("weekly 168 = %v, %v", got, err)
-	}
-	if _, err := parseTargetHours("169", maxWeeklyHours); err == nil || !strings.Contains(err.Error(), "168") {
-		t.Errorf("weekly 169: err %v, want one naming the 168 limit", err)
 	}
 }
 
@@ -530,7 +530,7 @@ func TestTodaySnapshot(t *testing.T) {
 	a.lastTick = now.Add(-time.Minute)
 
 	// Stopped: the active timer reports exactly its accumulated time.
-	timers, _, target, _ := a.todaySnapshot(now)
+	timers, _, target := a.todaySnapshot(now)
 	if len(timers) != 2 || timers[0].Elapsed != time.Hour || timers[1].Elapsed != 10*time.Minute {
 		t.Fatalf("stopped: timers = %+v", timers)
 	}
@@ -543,7 +543,7 @@ func TestTodaySnapshot(t *testing.T) {
 
 	// Running: only the active timer gains in-flight time.
 	a.running = true
-	timers, _, _, _ = a.todaySnapshot(now)
+	timers, _, _ = a.todaySnapshot(now)
 	if timers[0].Elapsed != time.Hour {
 		t.Errorf("inactive timer changed: %v", timers[0].Elapsed)
 	}
@@ -555,15 +555,12 @@ func TestTodaySnapshot(t *testing.T) {
 func TestLoadRejectsOutOfRangeTarget(t *testing.T) {
 	for _, raw := range []string{`1e18`, `-3`, `25`} {
 		dir := t.TempDir()
-		writeFile(t, filepath.Join(dir, ".tiktimer.json"), `{"timers":[],"active":-1,"dailyTargetHours":`+raw+`,"weeklyTargetHours":`+raw+`0}`)
+		writeFile(t, filepath.Join(dir, ".tiktimer.json"), `{"timers":[],"active":-1,"dailyTargetHours":`+raw+`}`)
 		a := newApp()
 		a.home = dir
 		a.load()
 		if got := a.dailyTargetValue(); got != defaultDailyTarget {
 			t.Errorf("dailyTargetHours %s: target = %v, want default", raw, got)
-		}
-		if a.weeklyTarget != 0 {
-			t.Errorf("weeklyTargetHours %s0: target = %v, want default", raw, a.weeklyTarget)
 		}
 	}
 }
@@ -618,7 +615,7 @@ func TestTodaySnapshotDatesLeftoversToLastRunDay(t *testing.T) {
 	a.running = true
 	a.lastTick = now
 
-	timers, _, _, _ := a.todaySnapshot(now)
+	timers, _, _ := a.todaySnapshot(now)
 	if len(timers) != 3 {
 		t.Fatalf("timers = %+v, want all three kept for stable colors", timers)
 	}
@@ -743,23 +740,53 @@ func TestLogTimestampJudgesDayWhenDialogOpened(t *testing.T) {
 	}
 }
 
+// menuText joins the summary items' texts, one per line; the bar has none.
+func menuText(items []menuet.MenuItem) string {
+	var texts []string
+	for _, it := range items {
+		texts = append(texts, it.Text)
+	}
+	return strings.Join(texts, "\n")
+}
+
+// fromYesterday returns the items from the Yesterday line on.
+func fromYesterday(t *testing.T, items []menuet.MenuItem) []menuet.MenuItem {
+	t.Helper()
+	for i, it := range items {
+		if strings.HasSuffix(it.Text, " (yesterday)") {
+			return items[i:]
+		}
+	}
+	t.Fatalf("no Yesterday line in %q", menuText(items))
+	return nil
+}
+
+// weekItem returns the This Week line, which carries the per-day submenu.
+func weekItem(t *testing.T, items []menuet.MenuItem) menuet.MenuItem {
+	t.Helper()
+	for _, it := range items {
+		if strings.HasSuffix(it.Text, " (this week)") {
+			return it
+		}
+	}
+	t.Fatalf("no This Week line in %q", menuText(items))
+	return menuet.MenuItem{}
+}
+
 func TestTodayItemsAreEnabled(t *testing.T) {
 	a := newTestApp(t, 1)
 	a.logPath = filepath.Join(t.TempDir(), "log.csv") // keep off the real iCloud log
 	a.timers[0].Accumulated = time.Hour               // enough for a project row
 
-	items := a.todayItems(time.Now())
-	yesterday, week := items[len(items)-2], items[len(items)-1]
-	if !strings.HasPrefix(yesterday.Text, "Yesterday") || !strings.HasPrefix(week.Text, "This Week") {
-		t.Fatalf("last two items %q, %q want Yesterday then This Week", yesterday.Text, week.Text)
-	}
+	items := a.todayItems(time.Date(2026, 11, 11, 15, 0, 0, 0, time.FixedZone("EST", -5*3600)))
+	week := weekItem(t, items)
 	if week.Children == nil {
 		t.Fatalf("This Week %q has no per-day submenu", week.Text)
 	}
 	// A nil Clicked would make AppKit grey the item out (#18). This Week has a
 	// submenu instead, like the timer rows; submenu parents stay enabled.
-	for _, it := range slices.Concat(items[:len(items)-1], week.Children()) {
-		if it.Clicked == nil {
+	for _, it := range slices.Concat(items, week.Children()) {
+		if it.Clicked == nil && it.Children == nil {
 			t.Errorf("summary item %q has no action, so it renders dimmed", it.Text)
 		}
 	}
@@ -775,11 +802,11 @@ func TestTodayItemsHeadlineLeavesOutExcluded(t *testing.T) {
 
 	now := time.Now()
 	items := a.todayItems(now)
-	// Headline and bar, then the project rows, then Yesterday and This Week.
-	if rows := items[2 : len(items)-2]; len(rows) != 2 {
-		t.Fatalf("got project rows %+v want Acme and Blog", rows)
+	// Headline and bar, then the project rows, then Yesterday.
+	if got := items[4].Text; got != "00:00 (yesterday)" {
+		t.Fatalf("item after the project rows %q want Yesterday; want rows for Acme and Blog only", got)
 	}
-	if want := headlineText("Today", time.Hour, a.dailyTargetValue(), "to go", logFlags{}); items[0].Text != want {
+	if want := "Today  01:00 of 8h · 07:00 to go"; items[0].Text != want {
 		t.Errorf("headline %q want %q", items[0].Text, want)
 	}
 	if !strings.Contains(items[3].Text, "not counted") {
@@ -787,7 +814,7 @@ func TestTodayItemsHeadlineLeavesOutExcluded(t *testing.T) {
 	}
 	// The bar and legend dots are drawn from the same summary; each dot is
 	// hatched only for the excluded project.
-	timers, _, target, _ := a.todaySnapshot(now)
+	timers, _, target := a.todaySnapshot(now)
 	projects := buildDaySummary(timers, todayLog{})
 	if items[1].Image != renderDayBar(projects, target) {
 		t.Error("bar is not drawn from the summary's projects")
@@ -808,19 +835,17 @@ func TestWeekBoundsDST(t *testing.T) {
 	// Clocks fall back on Sunday 2026-11-01. At 2 am Monday it is still
 	// Sunday's work day, so the week is the one starting Monday Oct 26.
 	cases := []struct {
-		name     string
-		now      time.Time
-		start    time.Time
-		daysLeft int
+		name  string
+		now   time.Time
+		start time.Time
 	}{
-		{"Monday before 4am", time.Date(2026, 11, 2, 2, 0, 0, 0, loc), time.Date(2026, 10, 26, 4, 0, 0, 0, loc), 1},
-		{"Monday after 4am", time.Date(2026, 11, 2, 5, 0, 0, 0, loc), time.Date(2026, 11, 2, 4, 0, 0, 0, loc), 7},
+		{"Monday before 4am", time.Date(2026, 11, 2, 2, 0, 0, 0, loc), time.Date(2026, 10, 26, 4, 0, 0, 0, loc)},
+		{"Monday after 4am", time.Date(2026, 11, 2, 5, 0, 0, 0, loc), time.Date(2026, 11, 2, 4, 0, 0, 0, loc)},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			start, daysLeft := weekBounds(c.now)
-			if !start.Equal(c.start) || daysLeft != c.daysLeft {
-				t.Errorf("got %v with %d days left, want %v with %d", start, daysLeft, c.start, c.daysLeft)
+			if start := weekBounds(c.now); !start.Equal(c.start) {
+				t.Errorf("got %v want %v", start, c.start)
 			}
 		})
 	}
@@ -846,23 +871,18 @@ func TestTodayItemsMondayYesterdayIsPreviousWeek(t *testing.T) {
 	sun := time.Date(2026, 11, 1, 12, 0, 0, 0, loc)
 	a := summaryLog(t, sat, sun, sun)
 	cases := []struct {
-		name            string
-		now             time.Time
-		yesterday, week time.Duration
-		daysLeft        int
+		name string
+		now  time.Time
+		want string
 	}{
-		{"before 4am yesterday is Saturday", time.Date(2026, 11, 2, 2, 0, 0, 0, loc), time.Hour, 3 * time.Hour, 1},
-		{"after 4am yesterday is Sunday", time.Date(2026, 11, 2, 5, 0, 0, 0, loc), 2 * time.Hour, 0, 7},
+		{"before 4am yesterday is Saturday", time.Date(2026, 11, 2, 2, 0, 0, 0, loc), "01:00 (yesterday)\n   - 01:00 (Acme)\n03:00 (this week)\n   - 03:00 (Acme)"},
+		{"after 4am yesterday is Sunday", time.Date(2026, 11, 2, 5, 0, 0, 0, loc), "02:00 (yesterday)\n   - 02:00 (Acme)\n00:00 (this week)"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			items := a.todayItems(c.now)
-			n := len(items)
-			if want := headlineText("Yesterday", c.yesterday, 8*time.Hour, "short", logFlags{}); items[n-2].Text != want {
-				t.Errorf("got %q want %q", items[n-2].Text, want)
-			}
-			if want := weekText(c.week, 40*time.Hour, c.daysLeft); items[n-1].Text != want {
-				t.Errorf("got %q want %q", items[n-1].Text, want)
+			if got := menuText(fromYesterday(t, items)); got != c.want {
+				t.Errorf("got\n%s\nwant\n%s", got, c.want)
 			}
 		})
 	}
@@ -898,44 +918,18 @@ func TestReadLoggedBucketsByWorkDay(t *testing.T) {
 	}
 }
 
-func TestTodayItemsWeekRowsSumToWeek(t *testing.T) {
+func TestTodayItemsWeekDayRows(t *testing.T) {
 	loc := time.FixedZone("EST", -5*3600)
 	mon := time.Date(2026, 11, 9, 10, 0, 0, 0, loc)
 	a := summaryLog(t, mon, mon, mon.AddDate(0, 0, 2))
 	items := a.todayItems(time.Date(2026, 11, 11, 15, 0, 0, 0, loc)) // Wednesday
-	week := items[len(items)-1]
-	if want := weekText(3*time.Hour, 40*time.Hour, 5); week.Text != want {
+	week := weekItem(t, items)
+	if want := "03:00 (this week)"; week.Text != want {
 		t.Errorf("week %q want %q", week.Text, want)
 	}
-	var texts []string
-	for _, it := range week.Children() {
-		texts = append(texts, it.Text)
-	}
-	if got, want := strings.Join(texts, "|"), "Mon  2h 00m|Tue  0h 00m|Wed  1h 00m"; got != want {
+	// Time first, so the monospaced digits line up down the submenu.
+	if got, want := menuText(week.Children()), "02:00 (Mon)\n00:00 (Tue)\n01:00 (Wed)"; got != want {
 		t.Errorf("week rows %q want %q", got, want)
-	}
-}
-
-func TestWeekText(t *testing.T) {
-	target := 40 * time.Hour
-	cases := []struct {
-		name     string
-		total    time.Duration
-		daysLeft int
-		want     string
-	}{
-		{"Monday", 0, 7, "This Week  0h 00m of 40h · 40h to go · 5h 43m/day left"},
-		{"per day rounds up a minute", 23*time.Hour + 10*time.Minute + 59*time.Second, 3, "This Week  23h 10m of 40h · 16h 50m to go · 5h 37m/day left"},
-		{"Sunday", 35 * time.Hour, 1, "This Week  35h 00m of 40h · 5h to go · 5h/day left"},
-		{"met", target, 2, "This Week  40h 00m of 40h · target reached"},
-		{"over", 42*time.Hour + 30*time.Minute, 2, "This Week  42h 30m of 40h · 2h 30m over"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := weekText(c.total, target, c.daysLeft); got != c.want {
-				t.Errorf("got  %q\nwant %q", got, c.want)
-			}
-		})
 	}
 }
 
@@ -954,15 +948,11 @@ func TestTodayItemsLeftoverLastRunFromOtherZone(t *testing.T) {
 	a.logPath = filepath.Join(t.TempDir(), "log.csv") // keep off the real iCloud log
 
 	items := a.todayItems(now)
-	week := items[len(items)-1]
-	if !strings.HasPrefix(week.Text, "This Week  2h 00m of 40h") {
+	week := weekItem(t, items)
+	if week.Text != "02:00 (this week)" {
 		t.Errorf("This Week %q, want the leftover's 2h", week.Text)
 	}
-	var texts []string
-	for _, it := range week.Children() {
-		texts = append(texts, it.Text)
-	}
-	if got, want := strings.Join(texts, "|"), "Mon  0h 00m|Tue  2h 00m|Wed  0h 00m|Thu  0h 00m"; got != want {
+	if got, want := menuText(week.Children()), "00:00 (Mon)\n02:00 (Tue)\n00:00 (Wed)\n00:00 (Thu)"; got != want {
 		t.Errorf("week rows %q want %q", got, want)
 	}
 }
@@ -970,23 +960,20 @@ func TestTodayItemsLeftoverLastRunFromOtherZone(t *testing.T) {
 func TestTodayItemsTimerTimeOnLastRunDay(t *testing.T) {
 	loc := time.FixedZone("EST", -5*3600)
 	cases := []struct {
-		name                         string
-		now                          time.Time
-		today, yesterday, week, rows string
+		name    string
+		now     time.Time
+		summary string
+		rows    string
 	}{
 		{
 			"Wednesday", time.Date(2026, 11, 11, 15, 0, 0, 0, loc),
-			"Today  1h 00m of 8h · 7h to go",
-			"Yesterday  2h 00m of 8h · 6h short",
-			"This Week  3h 00m of 40h · 37h to go · 7h 24m/day left",
-			"Mon  0h 00m|Tue  2h 00m|Wed  1h 00m",
+			"02:00 (yesterday)\n   - 02:00 (Acme)\n03:00 (this week)\n   - 02:00 (Acme)\n   - 01:00 (Live)",
+			"00:00 (Mon)\n02:00 (Tue)\n01:00 (Wed)",
 		},
 		{
 			"Monday after 4am", time.Date(2026, 11, 16, 9, 0, 0, 0, loc),
-			"Today  1h 00m of 8h · 7h to go",
-			"Yesterday  2h 00m of 8h · 6h short",
-			"This Week  1h 00m of 40h · 39h to go · 5h 35m/day left",
-			"Mon  1h 00m",
+			"02:00 (yesterday)\n   - 02:00 (Acme)\n01:00 (this week)\n   - 01:00 (Live)",
+			"01:00 (Mon)",
 		},
 	}
 	for _, c := range cases {
@@ -1007,21 +994,13 @@ func TestTodayItemsTimerTimeOnLastRunDay(t *testing.T) {
 			a.active, a.running, a.lastTick = 4, true, c.now.Add(-30*time.Minute)
 
 			items := a.todayItems(c.now)
-			n := len(items)
-			if items[0].Text != c.today {
-				t.Errorf("Today %q want %q", items[0].Text, c.today)
+			if want := "Today  01:00 of 8h · 07:00 to go"; items[0].Text != want {
+				t.Errorf("Today %q want %q", items[0].Text, want)
 			}
-			if items[n-2].Text != c.yesterday {
-				t.Errorf("Yesterday %q want %q, without the excluded or out-of-window time", items[n-2].Text, c.yesterday)
+			if got := menuText(fromYesterday(t, items)); got != c.summary {
+				t.Errorf("got\n%s\nwant\n%s\nwithout the excluded or out-of-window time", got, c.summary)
 			}
-			if items[n-1].Text != c.week {
-				t.Errorf("This Week %q want %q", items[n-1].Text, c.week)
-			}
-			var texts []string
-			for _, it := range items[n-1].Children() {
-				texts = append(texts, it.Text)
-			}
-			if got := strings.Join(texts, "|"); got != c.rows {
+			if got := menuText(weekItem(t, items).Children()); got != c.rows {
 				t.Errorf("week rows %q want %q", got, c.rows)
 			}
 		})
@@ -1035,10 +1014,10 @@ func TestTodayItemsFlagsUnreadableOnTodayOnly(t *testing.T) {
 		"2026-11-11T09:00:00-05:00,Acme,01:00:00,1.00,ok,\n"+
 		"2026-11-11T10:00:00-05:00,Acme,01:00:00,1.00,bad \"quote,\n")
 	items := a.todayItems(time.Date(2026, 11, 11, 15, 0, 0, 0, time.FixedZone("EST", -5*3600)))
-	if want := "Today  1h 00m of 8h · 7h to go · log unreadable"; items[0].Text != want {
+	if want := "Today  01:00 of 8h · 07:00 to go · log unreadable"; items[0].Text != want {
 		t.Errorf("Today %q want %q", items[0].Text, want)
 	}
-	for _, it := range items[len(items)-2:] {
+	for _, it := range items[1:] {
 		if strings.Contains(it.Text, "unreadable") {
 			t.Errorf("%q carries the warning; it belongs on the Today headline only", it.Text)
 		}
@@ -1052,7 +1031,8 @@ func TestTodayItemsWeekAcrossDST(t *testing.T) {
 	}
 	// Clocks fall back at 2 am Sunday Nov 1; at 3 am Monday it is still
 	// Sunday's work day. The 30s row and 30s timer fall on different days, so
-	// each day truncates them away and the week line must too.
+	// each day row truncates them away, but Acme's week total adds them up to
+	// a minute.
 	a := newTestApp(t, 1)
 	a.logPath = filepath.Join(t.TempDir(), "log.csv")
 	csv := "timestamp,name,duration,hours,note,tracked\n"
@@ -1068,52 +1048,51 @@ func TestTodayItemsWeekAcrossDST(t *testing.T) {
 		csv += r.when.Format(time.RFC3339) + ",Acme," + r.dur + ",,,\n"
 	}
 	writeFile(t, a.logPath, csv)
+	a.timers[0].Name = "Acme"
 	a.timers[0].Accumulated, a.timers[0].LastRun = 30*time.Second, time.Date(2026, 11, 1, 12, 0, 0, 0, loc)
 
 	items := a.todayItems(time.Date(2026, 11, 2, 3, 0, 0, 0, loc))
-	week := items[len(items)-1]
-	if want := "This Week  3h 00m of 40h · 37h to go · 37h/day left"; week.Text != want {
-		t.Errorf("week %q want %q", week.Text, want)
+	if got, want := menuText(fromYesterday(t, items)), "00:00 (yesterday)\n03:01 (this week)\n   - 03:01 (Acme)"; got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
-	var texts []string
-	for _, it := range week.Children() {
-		texts = append(texts, it.Text)
-	}
-	if got, want := strings.Join(texts, "|"), "Mon  1h 00m|Tue  0h 00m|Wed  0h 00m|Thu  0h 00m|Fri  0h 00m|Sat  0h 00m|Sun  2h 00m"; got != want {
+	if got, want := menuText(weekItem(t, items).Children()), "01:00 (Mon)\n00:00 (Tue)\n00:00 (Wed)\n00:00 (Thu)\n00:00 (Fri)\n00:00 (Sat)\n02:00 (Sun)"; got != want {
 		t.Errorf("week rows %q want %q", got, want)
 	}
 }
 
-func TestWeeklyTarget(t *testing.T) {
-	dir := t.TempDir()
-	a := newTestApp(t, 1)
-	a.home = dir
-	a.logPath = filepath.Join(dir, "log.csv") // keep off the real iCloud log
-	weekly := func() string {
-		items := a.menuItems()
-		return items[len(items)-1].Children()[2].Text
+func TestTodayItemsProjectBreakdowns(t *testing.T) {
+	loc := time.FixedZone("EST", -5*3600)
+	now := time.Date(2026, 11, 11, 15, 0, 0, 0, loc) // Wednesday
+	a := newTestApp(t, 4)
+	a.logPath = filepath.Join(t.TempDir(), "log.csv")
+	writeFile(t, a.logPath, "timestamp,name,duration,hours,note,tracked\n"+
+		"2026-11-09T10:00:00-05:00,Blog,02:00:00,,excluded on an earlier day,\n"+
+		"2026-11-09T11:00:00-05:00,Muevelo,01:00:30,,,\n"+
+		"2026-11-10T10:00:00-05:00,Muevelo,01:00:40,,,\n"+
+		"2026-11-10T11:00:00-05:00,Acme,00:30:50,,,\n"+
+		"2026-11-10T12:00:00-05:00,Zed,00:31:00,,CSV only,\n"+
+		"2026-11-11T09:00:00-05:00,Muevelo,00:45:00,,,\n")
+	a.timers[0].Name, a.timers[1].Name, a.timers[2].Name, a.timers[3].Name = "Muevelo", "Acme", "Blog", "Idle"
+	// Acme's 40s leftover from Tuesday takes it to 31m30s, tying Zed at 00:31.
+	a.timers[1].Accumulated, a.timers[1].LastRun = 40*time.Second, time.Date(2026, 11, 10, 20, 0, 0, 0, loc)
+	a.timers[2].Accumulated, a.timers[2].LastRun = time.Hour, now.Add(-time.Hour)
+	a.timers[2].ExcludeFromToday = true
+
+	items := a.todayItems(now)
+	// Yesterday's raw 2h03m10s would read 02:03; the line is its rows' sum.
+	want := "02:02 (yesterday)\n" +
+		"   - 01:00 (Muevelo)\n" +
+		"   - 00:31 (Acme)\n" +
+		"   - 00:31 (Zed)\n" +
+		"03:48 (this week)\n" +
+		"   - 02:46 (Muevelo)\n" +
+		"   - 00:31 (Acme)\n" +
+		"   - 00:31 (Zed)"
+	if got := menuText(fromYesterday(t, items)); got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
-	if _, _, _, got := a.todaySnapshot(time.Now()); got != 40*time.Hour || weekly() != "Weekly Target (40h, auto)…" {
-		t.Errorf("default = %v, %q want 40h auto", got, weekly())
+	if got, want := menuText(weekItem(t, items).Children()), "01:00 (Mon)\n02:03 (Tue)\n00:45 (Wed)"; got != want {
+		t.Errorf("week rows %q want %q", got, want)
 	}
-	a.setDailyTarget(7 * time.Hour)
-	if _, _, _, got := a.todaySnapshot(time.Now()); got != 35*time.Hour {
-		t.Errorf("default after daily 7h = %v, want 35h", got)
-	}
-	a.setWeeklyTarget(30 * time.Hour)
-	a.saveWG.Wait()
-	if weekly() != "Weekly Target (30h)…" {
-		t.Errorf("set label %q", weekly())
-	}
-	loaded := newApp()
-	loaded.home = dir
-	loaded.load()
-	if _, _, _, got := loaded.todaySnapshot(time.Now()); got != 30*time.Hour {
-		t.Errorf("loaded = %v, want 30h", got)
-	}
-	a.setWeeklyTarget(0)
-	if _, _, _, got := a.todaySnapshot(time.Now()); got != 35*time.Hour {
-		t.Errorf("after reset = %v, want the daily target × 5", got)
-	}
-	a.saveWG.Wait()
+	t.Logf("\n%s\n[submenu]\n%s", menuText(items), menuText(weekItem(t, items).Children()))
 }

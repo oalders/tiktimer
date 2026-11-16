@@ -17,12 +17,6 @@ import (
 // defaultDailyTarget applies when dailyTargetHours is unset in the save file.
 const defaultDailyTarget = 8 * time.Hour
 
-// maxDailyHours and maxWeeklyHours bound the targets: a day and a week.
-const (
-	maxDailyHours  = 24
-	maxWeeklyHours = 168
-)
-
 // sfDataless is the BSD file flag macOS sets on an iCloud file whose contents
 // have been evicted. Opening such a file blocks while it downloads, which
 // would freeze the menu (menuItems runs on the main thread).
@@ -99,12 +93,12 @@ func workedBeforeToday(lastRun, now time.Time) bool {
 }
 
 // weekBounds returns the start of the work week containing now's work day,
-// Monday at dayStartHour, and the work days left in it, today included.
-// Judging by the work day keeps Monday before 4 am in the previous week.
-func weekBounds(now time.Time) (start time.Time, daysLeft int) {
+// Monday at dayStartHour. Judging by the work day keeps Monday before 4 am in
+// the previous week.
+func weekBounds(now time.Time) time.Time {
 	day, _ := dayBounds(now)
 	offset := (int(day.Weekday()) + 6) % 7 // days since Monday
-	return day.AddDate(0, 0, -offset), 7 - offset
+	return day.AddDate(0, 0, -offset)
 }
 
 // logTimestamp is the time a Log & Reset row is dated: when the timer last
@@ -352,13 +346,13 @@ func buildDaySummary(timers []timerTime, tl todayLog) []projectTotal {
 	return out
 }
 
-// formatHM renders d as "7h 08m", truncated to whole minutes.
+// formatHM renders d as "07:08", truncated to whole minutes.
 func formatHM(d time.Duration) string {
 	if d < 0 {
 		d = 0
 	}
 	m := int(d / time.Minute)
-	return fmt.Sprintf("%dh %02dm", m/60, m%60)
+	return fmt.Sprintf("%02d:%02d", m/60, m%60)
 }
 
 // formatCompact renders d without zero parts, truncated to minutes: "8h",
@@ -377,42 +371,29 @@ func formatCompact(d time.Duration) string {
 	return fmt.Sprintf("%dh %02dm", m/60, m%60)
 }
 
-// headlineText is a summary line: "Today  7h 08m of 8h · 52m to go". The
-// remaining/over time is derived from the minute-truncated total, so the two
-// numbers always agree. under names the time still missing ("to go", or
-// "short" for a day that is over); flags are passed for Today only.
-func headlineText(label string, total, target time.Duration, under string, flags logFlags) string {
+// headlineText is the Today summary's first line. The remaining/over time is
+// derived from the minute-truncated total, so the two numbers always agree.
+func headlineText(total, target time.Duration, tl todayLog) string {
 	total = total.Truncate(time.Minute)
-	s := fmt.Sprintf("%s  %s of %s", label, formatHM(total), formatCompact(target))
+	s := fmt.Sprintf("Today  %s of %s", formatHM(total), formatCompact(target))
 	switch diff := target - total; {
 	case diff < time.Minute && diff > -time.Minute:
 		s += " · target reached"
 	case diff > 0:
-		s += fmt.Sprintf(" · %s %s", formatCompact(diff), under)
+		s += fmt.Sprintf(" · %s to go", formatHM(diff))
 	default:
-		s += fmt.Sprintf(" · %s over", formatCompact(-diff))
+		s += fmt.Sprintf(" · %s over", formatHM(-diff))
 	}
-	if flags.unreadable {
+	if tl.unreadable {
 		s += " · log unreadable"
 	}
-	if flags.dataless {
+	if tl.dataless {
 		s += " · some logs not downloaded"
 	}
 	return s
 }
 
-// weekText is the This Week line: the headline plus, while under target, the
-// time per day left (today included) needed to meet it, rounded up to the minute.
-func weekText(total, target time.Duration, daysLeft int) string {
-	s := headlineText("This Week", total, target, "to go", logFlags{})
-	if left := int((target - total.Truncate(time.Minute)) / time.Minute); left >= 1 {
-		perDay := time.Duration((left+daysLeft-1)/daysLeft) * time.Minute
-		s += fmt.Sprintf(" · %s/day left", formatCompact(perDay))
-	}
-	return s
-}
-
-// rowText is a project row: "Acme  4h 50m  (5 entries, 23m unlogged)". The
+// rowText is a project row: "Acme  04:50  (5 entries, 00:23 unlogged)". The
 // total includes the unlogged timer time; an excluded project says so last.
 func rowText(p projectTotal) string {
 	var parts []string
@@ -424,7 +405,7 @@ func rowText(p projectTotal) string {
 	}
 	// Under a minute of timer time is noise next to hours of logged work.
 	if p.Unlogged >= time.Minute {
-		parts = append(parts, formatCompact(p.Unlogged)+" unlogged")
+		parts = append(parts, formatHM(p.Unlogged)+" unlogged")
 	}
 	if p.Excluded {
 		parts = append(parts, "not counted")
@@ -436,14 +417,14 @@ func rowText(p projectTotal) string {
 	return s
 }
 
-// parseTargetHours parses a target dialog's input: decimal hours, with either
-// "." or "," as the decimal separator, in (0, maxHours].
-func parseTargetHours(s string, maxHours float64) (time.Duration, error) {
+// parseTargetHours parses the Daily Target dialog input: decimal hours, with
+// either "." or "," as the decimal separator, in (0, 24].
+func parseTargetHours(s string) (time.Duration, error) {
 	s = strings.ReplaceAll(strings.TrimSpace(s), ",", ".")
 	h, err := strconv.ParseFloat(s, 64)
 	// Written as !(in range) so NaN, which fails every comparison, is rejected.
-	if err != nil || !(h > 0 && h <= maxHours) {
-		return 0, fmt.Errorf("enter hours between 0 and %g, e.g. 8 or 7.5 (got %q)", maxHours, s)
+	if err != nil || !(h > 0 && h <= 24) {
+		return 0, fmt.Errorf("enter hours between 0 and 24, e.g. 8 or 7.5 (got %q)", s)
 	}
 	d := time.Duration(h * float64(time.Hour)).Round(time.Minute)
 	if d < time.Minute {
