@@ -7,6 +7,11 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 # category so real warnings stay visible.
 export CGO_CFLAGS := -g -O2 -Wno-deprecated-declarations
 
+# clang adds -lobjc for every cgo package with Objective-C code, so the Xcode 15+
+# linker warns "ignoring duplicate libraries: '-lobjc'". It's harmless
+# (golang/go#67799); suppress it.
+export CGO_LDFLAGS := -Wl,-no_warn_duplicate_libraries
+
 .PHONY: help init test build run app clean release
 
 .DEFAULT_GOAL := help
