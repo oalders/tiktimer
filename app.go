@@ -64,7 +64,9 @@ type saveData struct {
 	LogPath string      `json:"logPath,omitempty"`
 	// DailyTargetHours is the Today summary's goal in hours; 0 means 8.
 	DailyTargetHours float64 `json:"dailyTargetHours,omitempty"`
-	Running          bool    `json:"running,omitempty"`
+	// Running is true when the active timer was running, or auto-paused for
+	// sleep so quitting before wake doesn't lose it.
+	Running bool `json:"running,omitempty"`
 }
 
 func newApp() *App {
@@ -83,8 +85,6 @@ func (a *App) save() {
 	a.saveMu.Lock()
 	defer a.saveMu.Unlock()
 	a.mu.Lock()
-	// A timer auto-paused for sleep counts as running so quitting before wake
-	// doesn't lose it.
 	data := saveData{Active: a.active, Display: a.display, LogPath: a.logPath, DailyTargetHours: a.dailyTarget.Hours(), Running: a.running || a.autoPaused}
 	for _, t := range a.timers {
 		data.Timers = append(data.Timers, *t)
