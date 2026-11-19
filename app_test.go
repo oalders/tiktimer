@@ -1039,12 +1039,14 @@ func TestLoadRestoresRunning(t *testing.T) {
 	})
 
 	t.Run("out-of-range active stays stopped", func(t *testing.T) {
-		a := newTestApp(t, 1)
-		a.active = 5
-		a.running = true
-		a.save()
-		if reload(a).running {
-			t.Error("out-of-range active loaded as running")
+		for _, active := range []int{-1, 5} {
+			a := newTestApp(t, 1)
+			a.active = active
+			a.running = true
+			a.save()
+			if reload(a).running {
+				t.Errorf("out-of-range active %d loaded as running", active)
+			}
 		}
 	})
 
