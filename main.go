@@ -554,11 +554,7 @@ func main() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 		<-sig
-		app.mu.Lock()
-		app.flushActive()
-		app.running = false
-		app.mu.Unlock()
-		app.save()
+		app.shutdown()
 		os.Exit(0)
 	}()
 

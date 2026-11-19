@@ -997,6 +997,69 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if loaded.active != 1 || loaded.display != DisplayOdometer || loaded.logPath != "/custom/log.csv" {
 		t.Errorf("scalar fields not restored: active=%d display=%q logPath=%q", loaded.active, loaded.display, loaded.logPath)
 	}
+	if loaded.running {
+		t.Error("stopped timer loaded as running")
+	}
+}
+
+func TestLoadRestoresRunning(t *testing.T) {
+	reload := func(a *App) *App {
+		loaded := newApp()
+		loaded.home = a.home
+		loaded.load()
+		return loaded
+	}
+
+	t.Run("running timer resumes after shutdown", func(t *testing.T) {
+		a := newTestApp(t, 1)
+		a.active = 0
+		a.running = true
+		a.lastTick = time.Now().Add(-time.Minute)
+		a.shutdown()
+		loaded := reload(a)
+		if !loaded.running {
+			t.Fatal("running timer loaded stopped")
+		}
+		if time.Since(loaded.lastTick) > time.Second {
+			t.Errorf("lastTick not reset to load time: %v", loaded.lastTick)
+		}
+		if loaded.timers[0].Accumulated < time.Minute {
+			t.Errorf("elapsed time not banked: %v", loaded.timers[0].Accumulated)
+		}
+	})
+
+	t.Run("auto-paused timer resumes", func(t *testing.T) {
+		a := newTestApp(t, 1)
+		a.active = 0
+		a.autoPaused = true
+		a.save()
+		if !reload(a).running {
+			t.Error("auto-paused timer loaded stopped")
+		}
+	})
+
+	t.Run("out-of-range active stays stopped", func(t *testing.T) {
+		for _, active := range []int{-1, 5} {
+			a := newTestApp(t, 1)
+			a.active = active
+			a.running = true
+			a.save()
+			if reload(a).running {
+				t.Errorf("out-of-range active %d loaded as running", active)
+			}
+		}
+	})
+
+	t.Run("timer from an earlier work day stays stopped", func(t *testing.T) {
+		a := newTestApp(t, 1)
+		a.active = 0
+		a.running = true
+		a.timers[0].LastRun = time.Now().AddDate(0, 0, -2)
+		a.save()
+		if reload(a).running {
+			t.Error("timer left running on an earlier day loaded as running")
+		}
+	})
 }
 
 func TestLoadDefaultsWhenNoFile(t *testing.T) {

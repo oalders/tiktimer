@@ -64,6 +64,9 @@ type saveData struct {
 	LogPath string      `json:"logPath,omitempty"`
 	// DailyTargetHours is the Today summary's goal in hours; 0 means 8.
 	DailyTargetHours float64 `json:"dailyTargetHours,omitempty"`
+	// Running is true when the active timer was running, or auto-paused for
+	// sleep so quitting before wake doesn't lose it.
+	Running bool `json:"running,omitempty"`
 }
 
 func newApp() *App {
@@ -82,7 +85,7 @@ func (a *App) save() {
 	a.saveMu.Lock()
 	defer a.saveMu.Unlock()
 	a.mu.Lock()
-	data := saveData{Active: a.active, Display: a.display, LogPath: a.logPath, DailyTargetHours: a.dailyTarget.Hours()}
+	data := saveData{Active: a.active, Display: a.display, LogPath: a.logPath, DailyTargetHours: a.dailyTarget.Hours(), Running: a.running || a.autoPaused}
 	for _, t := range a.timers {
 		data.Timers = append(data.Timers, *t)
 	}
@@ -139,6 +142,13 @@ func (a *App) load() {
 		a.timers = append(a.timers, &data.Timers[i])
 	}
 	a.active = data.Active
+	// A timer left running on an earlier work day loads stopped so its time
+	// stays dated to that day; time spent closed never counts.
+	now := time.Now()
+	if data.Running && a.active >= 0 && a.active < len(a.timers) && !workedBeforeToday(a.timers[a.active].LastRun, now) {
+		a.running = true
+		a.lastTick = now
+	}
 	if data.Display != "" {
 		a.display = data.Display
 	}
@@ -148,6 +158,15 @@ func (a *App) load() {
 	if h := data.DailyTargetHours; h > 0 && h <= 24 {
 		a.dailyTarget = time.Duration(h * float64(time.Hour)).Round(time.Minute)
 	}
+}
+
+// shutdown banks the active timer's elapsed time and saves its run state so the
+// next launch resumes it.
+func (a *App) shutdown() {
+	a.mu.Lock()
+	a.flushActive()
+	a.mu.Unlock()
+	a.save()
 }
 
 func formatDuration(d time.Duration, showTenths bool) string {
